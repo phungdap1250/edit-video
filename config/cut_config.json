@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "silence": {
+    "keep_below_ms": 600,
+    "trim_mid_to_ms": 300,
+    "mid_threshold_ms": 1500,
+    "trim_long_to_ms": 400,
+    "trim_edges_to_ms": 200,
+    "padding_each_side_ms": 100
+  },
+  "filler": {
+    "group_a_requires_silence_ms": 300,
+    "never_cut_if_sentence_boundary": true
+  },
+  "retake": {
+    "tier1_keyword": "cắt cắt",
+    "tier1_requires_silence_before_ms": 300,
+    "tier1_requires_silence_after_ms": 300,
+    "tier2_window_sec": 15,
+    "tier2_similarity_threshold": 0.70,
+    "tier2_strip_diacritics": true,
+    "tier2_strip_fillers": true
+  },
+  "zoom": {
+    "min": 1.00, "max": 1.10,
+    "fallback_max_if_no_face": 1.04,
+    "no_repeat_adjacent": true
+  },
+  "cutaway": {
+    "max_face_cover_sec": 8.0,
+    "min_segment_sec": 1.5,
+    "min_gap_ms": 500
+  },
+  "overlay": {
+    "max_concurrent": 1,
+    "min_gap_ms": 500,
+    "timing_tolerance_ms": 300,
+    "max_items_per_5min": 20
+  },
+  "budget": {
+    "gemini_api_calls_per_video": 10,
+    "gemini_api_calls_per_month": 120,
+    "gemini_regen_per_item": 3,
+    "gemini_cost_vnd_per_call": 780,
+    "monthly_budget_vnd": 100000
+  },
+  "render": {
+    "block_target_min_sec": 20, "block_target_max_sec": 40, "block_hard_max_sec": 50,
+    "fps": 30, "draft_height": 480, "final_height": 1080,
+    "ram_pause_threshold_mb": 800,
+    "disk_estimate_gb_per_5min": 8,
+    "disk_gc_threshold_gb": 5,
+    "warn_if_blocks_to_render_percent": 50
+  },
+  "limits": {
+    "max_video_sec": 300,
+    "warn_and_confirm_above_sec": 300
+  }
+}

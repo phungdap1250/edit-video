@@ -1,0 +1,15 @@
+source/
+work/
+out/
+hf/
+.draft/
+logs/
+.env
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+web/static/alpine.min.js
+
+# Session state cục bộ của Claude Code — không thuộc mã nguồn
+.claude/session-state/

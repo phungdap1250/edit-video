@@ -1,0 +1,11 @@
+/* Style tối thiểu giữ trang đọc được trước khi lấy bố cục từ ui-demo/.
+   Không phát triển thêm ở đây — xem CLAUDE.md. */
+[x-cloak] { display: none !important; }
+
+body { margin: 0; font-family: "Be Vietnam Pro", system-ui, sans-serif; }
+.bar { display: flex; justify-content: space-between; align-items: center;
+       padding: 12px 16px; border-bottom: 1px solid #e5e5e5; position: sticky; top: 0;
+       background: #fff; }
+.item { padding: 8px 16px; border-bottom: 1px solid #f0f0f0; }
+.item.rejected { opacity: .5; text-decoration: line-through; }
+.conflicts { background: #fff4f4; padding: 8px 16px; }

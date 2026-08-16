@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "mode_auto": { "word_pop_if_vertical_and_under_sec": 120 },
+  "font": {
+    "family": "Be Vietnam Pro",
+    "fallbacks": ["Noto Sans", "Arial Unicode MS"],
+    "weight_normal": 500,
+    "weight_emphasis": 700
+  },
+  "size": { "landscape_px": 52, "portrait_px": 68 },
+  "color": { "dim": "#FFFFFF99", "active": "#FFFFFF", "emphasis": "#FF6B35" },
+  "layout": {
+    "max_chars_per_line_landscape": 42,
+    "max_chars_per_line_portrait": 24,
+    "max_lines": 2,
+    "bottom_margin_percent": 8
+  },
+  "forbidden_zone": { "x": 0, "y": 0.70, "w": 1.0, "h": 0.30 },
+  "timing": { "max_linger_after_speech_ms": 1000, "min_display_ms": 500 }
+}

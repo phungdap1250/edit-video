@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Duyệt điểm cắt — AI Editor</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script defer src="/static/alpine.min.js"></script>
+  <script defer src="/static/review.js"></script>
+</head>
+<!--
+  KHUNG TRỐNG CÓ CHỦ Ý. Bố cục lấy từ ui-demo/ (xem CLAUDE.md) — chưa có bản
+  thiết kế thì không tự sáng tạo layout mới. Phần state đã nối sẵn qua review.js.
+  Yêu cầu chức năng: transcript đầy đủ, đoạn bị đề xuất cắt gạch ngang kèm nhãn lý do, tầng phát hiện, độ tin cậy (PRD F1)
+-->
+<body x-data="reviewPage('cut')" x-cloak>
+  <header class="bar">
+    <h1>Duyệt điểm cắt</h1>
+    <div class="actions">
+      <span x-text="message"></span>
+      <button @click="publish()">Xuất quyết định</button>
+    </div>
+  </header>
+
+  <template x-if="conflicts.length">
+    <section class="conflicts">
+      <template x-for="c in conflicts" :key="c.id + c.field">
+        <article class="conflict">
+          <b x-text="c.id + ' · ' + c.field"></b>
+          <button @click="resolveConflict(c, true)">Giữ bản của tôi</button>
+          <button @click="resolveConflict(c, false)">Giữ bản của Claude</button>
+        </article>
+      </template>
+    </section>
+  </template>
+
+  <main x-show="!loading">
+    <template x-for="item in items" :key="item.id">
+      <article class="item" :class="item.status">
+        <!-- TODO(ui-demo): dòng transcript có gạch ngang + nhãn tier/confidence -->
+        <span x-text="item.id"></span>
+        <button @click="setStatus(item, 'accepted')">Giữ</button>
+        <button @click="setStatus(item, 'rejected')">Bỏ</button>
+      </article>
+    </template>
+  </main>
+</body>
+</html>

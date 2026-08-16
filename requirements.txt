@@ -1,0 +1,9 @@
+flask>=3.0
+requests>=2.31
+opencv-python-headless>=4.9
+playwright>=1.40
+python-dotenv>=1.0
+pyyaml>=6.0
+
+# dev
+pytest>=8.0
