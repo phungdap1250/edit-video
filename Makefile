@@ -1,6 +1,6 @@
 PY := python
 
-.PHONY: help setup vendor status check check-fast check-arch test clean
+.PHONY: help setup dirs vendor status check check-fast check-arch test clean
 
 help:
 	@echo "make setup       — cài phụ thuộc Python"
@@ -12,8 +12,14 @@ help:
 	@echo "make test        — pytest"
 	@echo "make clean       — xoá work/ và out/ (source/ và plans/ nguyên vẹn)"
 
-setup:
+RUNTIME_DIRS := source work/blocks work/generated_images assets hf/scenes plans .draft logs out
+
+setup: dirs
 	$(PY) -m pip install -r requirements.txt
+
+# Thư mục runtime nằm ngoài git (TDD §13.6) — clone về là chưa có, tạo lại ở đây
+dirs:
+	@mkdir -p $(RUNTIME_DIRS)
 
 vendor:
 	curl -fsSL https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js -o web/static/alpine.min.js
