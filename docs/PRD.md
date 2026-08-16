@@ -121,7 +121,7 @@ Luật cứng: **không cắt từ đệm nếu nó là từ đầu tiên hoặc
 
 #### [RND] Feature 2: Lắp ráp timeline & render (HyperFrames)
 
-**Status:** ⏳ Todo
+**Status:** ⚠️ Partial — render 1-khối thật đã chạy đúng trên video thật; chia khối tăng dần + Variables cần [CAP-01]/[MGX-01]/[JMP-01] trước. Xem ghi chú dưới bảng Done khi.
 
 **Story:** [RND-01] Là người tự dựng video, tôi muốn hệ thống ghép footage đã cắt cùng mọi lớp phủ vào một timeline HyperFrames và xuất ra MP4, để tôi có file hoàn chỉnh mà khi sửa chỉ phải render lại đúng đoạn đã đổi.
 
@@ -155,6 +155,20 @@ Luật cứng: **không cắt từ đệm nếu nó là từ đầu tiên hoặc
 - ❌ Chưa cần render trên cloud / nhiều máy
 - ❌ Chưa cần xuất ProRes hay codec dựng chuyên nghiệp khác
 - ❌ Chưa hỗ trợ video dài trên 5 phút
+
+**Ghi chú Partial (16/08/2026):** Render THẬT qua HyperFrames CLI thật (`npx hyperframes`, không phải giả lập) đã chạy đúng đầu-cuối trên video của người dùng — xem ảnh khung hình đã soi bằng mắt, đúng chiều dọc 1080×1920, không méo, không viền đen, có tiếng.
+
+✅ Đạt thật: nhận đúng khung ngang/dọc (đã sửa 1 bug thật — `ffprobe` báo kích thước lưu trữ thô, không tính metadata xoay của iPhone, khiến video dọc bị nhận nhầm thành ngang) · MP4 H.264/30fps xuất ra đúng · Studio preview mở được (`npx hyperframes preview`) · giữ cả MP4 lẫn project `hf/` nguyên vẹn, sửa tay được · kiểm dung lượng ổ trống trước khi render.
+
+Trong lúc test bắt thêm 1 bug thật thứ hai: `<video>` sinh ra thiếu CSS định vị (`position:absolute` cần `#root` là ngữ cảnh định vị) → render ra **toàn màn hình đen** dù `npx hyperframes check` báo **0 lỗi** — đúng cảnh báo tài liệu HyperFrames: "không dựa vào automated gate, phải soi khung hình". Đã sửa, xác nhận lại bằng ảnh thật.
+
+❌ Chưa đạt — cần hạ tầng chưa tồn tại, không phải thiếu công code đơn thuần:
+- Chia khối render theo điểm an toàn (§6.2) — `is_safe_point()` cần đọc timeline caption/đồ hoạ/cutaway để biết chỗ nào "không có chuyển động đang chạy dở", nhưng 3 lớp đó thuộc `[CAP-01]`/`[MGX-01]`/`[JMP-01]`, chưa story nào trong số đó được code. Hiện tại render là **1 khối duy nhất** cho toàn video.
+- Do chỉ 1 khối: "sửa 1 câu → render lại 1 đoạn", "render đứt → chạy tiếp phần thiếu", "nối đoạn dưới 30s", "xoá file tạm sau khi nối" đều **không áp dụng được** — không có khối nào để chia/nối/tiếp tục.
+- Sửa qua Variables (không render lại) — thuộc `[MGX-01]` (Variables là bản chiếu của `overlay_plan.json`, chưa tồn tại).
+- AV sync đo bằng `check_av_sync.py` — script còn là stub, chưa đo thật số lệch tiếng-hình.
+- "Bản nháp 480p" — `--quality draft` của HyperFrames chỉ chỉnh **chất lượng mã hoá** (CRF/bitrate), không hạ **độ phân giải**; `--resolution` chỉ supersample lên theo bội số nguyên, không hạ xuống được. Bản nháp hiện render đúng độ phân giải nguồn (1080×1920), không phải 480p theo đúng nghĩa đen của tiêu chí.
+- Cả 2 mốc thời gian (nháp dưới 5 phút, bản cuối dưới 35 phút) đo trên video 5 phút thật — chưa có video 5 phút để đo, chỉ mới test với 10 giây.
 
 **Edge cases:**
 | Tình huống | Xử lý |

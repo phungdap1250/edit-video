@@ -10,6 +10,14 @@ from lib import log
 from lib.errors import AIEditorError
 
 
+def _rotation_degrees(video_stream: dict) -> int:
+    """Đọc góc xoay từ side_data (chuẩn mới) hoặc tags.rotate (QuickTime cũ)."""
+    for side_data in video_stream.get("side_data_list", []):
+        if "rotation" in side_data:
+            return int(side_data["rotation"])
+    return int(video_stream.get("tags", {}).get("rotate", 0))
+
+
 def _run(args: list[str], what: str) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(args, capture_output=True, text=True, check=True)
@@ -27,7 +35,12 @@ def _run(args: list[str], what: str) -> subprocess.CompletedProcess:
 
 
 def probe(video: Path) -> dict:
-    """Trả {duration_sec, width, height, fps, vcodec, acodec}."""
+    """Trả {duration_sec, width, height, fps, vcodec, acodec}.
+
+    width/height là KÍCH THƯỚC HIỂN THỊ — đã đổi chiều theo metadata rotation
+    khi có (±90/±270, kiểu iPhone quay dọc lưu pixel ngang + cờ xoay). Dùng
+    kích thước lưu trữ thô sẽ đoán sai khung ngang/dọc cho mọi video có xoay.
+    """
     out = _run(
         ["ffprobe", "-v", "error", "-print_format", "json",
          "-show_format", "-show_streams", str(video)],
@@ -50,10 +63,13 @@ def probe(video: Path) -> dict:
 
     numerator, _, denominator = video_stream.get("r_frame_rate", "30/1").partition("/")
     fps = float(numerator) / float(denominator or 1)
+    width, height = int(video_stream["width"]), int(video_stream["height"])
+    if abs(_rotation_degrees(video_stream)) % 180 == 90:
+        width, height = height, width
     return {
         "duration_sec": round(float(data["format"]["duration"]), 3),
-        "width": int(video_stream["width"]),
-        "height": int(video_stream["height"]),
+        "width": width,
+        "height": height,
         "fps": round(fps, 3),
         "vcodec": video_stream["codec_name"],
         "acodec": audio_stream["codec_name"],
