@@ -5,13 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Duyệt điểm cắt — AI Editor</title>
   <link rel="stylesheet" href="/static/app.css">
-  <script defer src="/static/alpine.min.js"></script>
+  <!-- review.js PHẢI nạp trước alpine.min.js: bản CDN của Alpine tự
+       gọi Alpine.start() ngay khi document.readyState != 'loading',
+       tức là TRƯỚC defer script kế tiếp — reviewPage() phải tồn tại sẵn. -->
   <script defer src="/static/review.js"></script>
+  <script defer src="/static/alpine.min.js"></script>
 </head>
 <!--
   KHUNG TRỐNG CÓ CHỦ Ý. Bố cục lấy từ ui-demo/ (xem CLAUDE.md) — chưa có bản
   thiết kế thì không tự sáng tạo layout mới. Phần state đã nối sẵn qua review.js.
-  Yêu cầu chức năng: transcript đầy đủ, đoạn bị đề xuất cắt gạch ngang kèm nhãn lý do, tầng phát hiện, độ tin cậy (PRD F1)
+  Yêu cầu chức năng: transcript đầy đủ, đoạn bị đề xuất cắt gạch ngang kèm nhãn lý do, tầng phát hiện, độ tin cậy (PRD [CUT])
 -->
 <body x-data="reviewPage('cut')" x-cloak>
   <header class="bar">
@@ -35,12 +38,17 @@
   </template>
 
   <main x-show="!loading">
+    <!-- TODO(ui-demo): thay bằng transcript liên tục có đoạn cắt gạch ngang inline.
+         Danh sách rời từng mục dưới đây là bản chức năng tối thiểu — đủ dữ liệu
+         cho tiêu chí "Done khi" (PRD [CUT]), chưa phải bố cục cuối. -->
     <template x-for="item in items" :key="item.id">
       <article class="item" :class="item.status">
-        <!-- TODO(ui-demo): dòng transcript có gạch ngang + nhãn tier/confidence -->
-        <span x-text="item.id"></span>
-        <button @click="setStatus(item, 'accepted')">Giữ</button>
-        <button @click="setStatus(item, 'rejected')">Bỏ</button>
+        <span class="anchor-text" :class="{ struck: item.status === 'accepted' }" x-text="item.anchor_text"></span>
+        <span class="reason" x-text="reasonLabel(item)"></span>
+        <span class="tier" x-text="'tầng ' + item.tier"></span>
+        <span class="confidence" x-text="Math.round((item.confidence ?? 1) * 100) + '%'"></span>
+        <button @click="setStatus(item, 'accepted')" :disabled="item.status === 'accepted'">Giữ</button>
+        <button @click="setStatus(item, 'rejected')" :disabled="item.status === 'rejected'">Bỏ</button>
       </article>
     </template>
   </main>

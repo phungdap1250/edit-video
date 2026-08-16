@@ -72,5 +72,15 @@ function reviewPage(kind) {
     media(path) {
       return `/media/${path}?token=${this.token}`;
     },
+
+    /* Nhãn lý do cho trang /cut — PRD [CUT]: "nhãn lý do, tầng phát hiện và độ tin cậy". */
+    reasonLabel(item) {
+      if (item.kind === "silence") return "khoảng lặng";
+      if (item.kind === "filler") return item.group === "A" ? "từ đệm (tự động)" : "từ đệm (đề xuất)";
+      if (item.kind === "retake") {
+        return { 1: "nói lại (từ khoá)", 2: "nói lại (so khớp)", 3: "đổi hướng giữa câu" }[item.tier] || "nói lại";
+      }
+      return item.kind || "";
+    },
   };
 }

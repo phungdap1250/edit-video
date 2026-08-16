@@ -5,13 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Duyệt đồ hoạ — AI Editor</title>
   <link rel="stylesheet" href="/static/app.css">
-  <script defer src="/static/alpine.min.js"></script>
+  <!-- review.js PHẢI nạp trước alpine.min.js: bản CDN của Alpine tự
+       gọi Alpine.start() ngay khi document.readyState != 'loading',
+       tức là TRƯỚC defer script kế tiếp — reviewPage() phải tồn tại sẵn. -->
   <script defer src="/static/review.js"></script>
+  <script defer src="/static/alpine.min.js"></script>
 </head>
 <!--
   KHUNG TRỐNG CÓ CHỦ Ý. Bố cục lấy từ ui-demo/ (xem CLAUDE.md) — chưa có bản
   thiết kế thì không tự sáng tạo layout mới. Phần state đã nối sẵn qua review.js.
-  Yêu cầu chức năng: bản ĐỘNG: mỗi thẻ phát được chuyển động + audio gốc tại giây đó, tua được, phát toàn bộ liên tục, sửa chữ trực tiếp (PRD F5)
+  Yêu cầu chức năng: bản ĐỘNG: mỗi thẻ phát được chuyển động + audio gốc tại giây đó, tua được, phát toàn bộ liên tục, sửa chữ trực tiếp (PRD [MGX])
 -->
 <body x-data="reviewPage('storyboard')" x-cloak>
   <header class="bar">

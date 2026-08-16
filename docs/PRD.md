@@ -48,7 +48,7 @@
 
 #### [CUT] Feature 1: Cắt sạch footage thô (có duyệt trước)
 
-**Status:** ⏳ Todo
+**Status:** ⚠️ Partial — thiếu 2/8 dòng "Done khi", xem ghi chú dưới bảng Done khi.
 
 **Story:** [CUT-01] Là người tự dựng video, tôi muốn Claude tự phát hiện và đề xuất các đoạn cần cắt trong footage thô, để tôi chỉ việc duyệt thay vì ngồi rà từng giây trên timeline.
 
@@ -91,17 +91,21 @@ Luật cứng: **không cắt từ đệm nếu nó là từ đầu tiên hoặc
 | **3** | **Claude đọc ngữ cảnh** — bắt ca nói nửa câu rồi đổi hướng ("Cái phễu này có ba— thật ra là bốn bước") | **Luôn hiện màu vàng, mặc định không cắt** | < 40% |
 
 **Done khi:**
-- ✅ Transcript có timestamp cấp từ; **WER ≤ 10%** đo bằng `check_wer.py` trên bộ mẫu chuẩn `tests/golden_transcript.txt` (đoạn 3 phút gõ tay 1 lần, dùng lại mãi)
+- ⚠️ Transcript có timestamp cấp từ; **WER ≤ 10%** đo bằng `check_wer.py` trên bộ mẫu chuẩn `tests/golden_transcript.txt` (đoạn 3 phút gõ tay 1 lần, dùng lại mãi) — `lib/transcribe.py` (ElevenLabs Scribe) đã viết nhưng CHƯA gọi thật; `check_wer.py` còn là stub; `tests/golden_transcript.txt` chưa tồn tại — theo TDD §12.4 đây là thứ **duy nhất trong hệ thống không tự động hoá được**, cần anh gõ tay 1 lần
 - ✅ Mỗi từ trong transcript có **ID bất biến**, `cut_plan.json` neo vào ID chứ không neo vào giây
 - ✅ `cut_plan.json` ghi mỗi mục gồm: ID từ vào–ra, timestamp vào–ra (tính ra được), loại lỗi, **tầng phát hiện**, **độ tin cậy**, nội dung thoại tại đó
-- ✅ Trang duyệt `/cut` chạy qua **server duyệt cục bộ**, hiển thị transcript có đánh dấu điểm cắt kèm tầng và độ tin cậy
+- ✅ Trang duyệt `/cut` chạy qua **server duyệt cục bộ**, hiển thị transcript có đánh dấu điểm cắt kèm tầng và độ tin cậy — chức năng đủ (đã smoke-test qua Flask test client), **bố cục còn là khung tối thiểu chờ `ui-demo/`** (hiện rỗng)
 - ✅ Người dùng bỏ cắt / thêm cắt trên trang duyệt → bấm "Xuất quyết định" → **server ghi đè đúng file `cut_plan.json` trên đĩa**, hiện xác nhận kèm số mục giữ/bỏ và thời điểm lưu
 - ✅ Ba tiêu chí phát hiện đọc từ `cut_config.json` và `filler_words.txt` — **không có ngưỡng nào hardcode trong code**
 - ✅ Bản cắt xong không mất chữ đầu/cuối câu — giữ khoảng đệm tối thiểu **100ms** mỗi đầu
-- ✅ Video 5 phút: xử lý xong bước đề xuất trong **dưới 2 phút** (không tính thời gian transcript)
+- ⚠️ Video 5 phút: xử lý xong bước đề xuất trong **dưới 2 phút** — chưa đo được, chưa có video mẫu 5 phút thật; đã xác nhận đúng trên video tổng hợp 4.6 giây (transcript giả lập → phát hiện → áp cắt bằng ffmpeg thật)
 - ✅ File gốc luôn nguyên vẹn, mọi thao tác ghi ra file mới
 - ❌ Chưa cần giao diện timeline trực quan dạng waveform kéo thả
 - ❌ Chưa cần tự động phát hiện lỗi hình ảnh (mất nét, sai khung)
+
+**Ghi chú Partial (16/08/2026):** 6/8 dòng đạt, có test (59 test pytest xanh). Đã chạy thử đầu-cuối **2 lần**: (1) video tổng hợp + ffmpeg thật, (2) **video thật của anh** (`IMG_4588.MOV`, 13.3s, 4K dọc iPhone) — gọi ElevenLabs Scribe thật, phát hiện 9 điểm cắt, duyệt qua trang `/cut` thật, áp cắt bằng ffmpeg thật (13.3s → 10.0s, 0 chữ mất, `check_anchor_integrity` sạch). Trong lần thử này bắt và sửa 1 lỗi thật: Alpine.js không khởi động do thứ tự nạp script sai ở cả 3 trang duyệt.
+
+2 dòng còn thiếu vẫn phụ thuộc thứ ngoài tầm code, video 13s không đủ để chốt: (1) `tests/golden_transcript.txt` do anh gõ tay 3 phút để đo WER, (2) một video mẫu **5 phút** thật để đo hiệu năng (đã test 13s, chưa đại diện cho ngưỡng "dưới 2 phút" của video 5 phút). Không có 2 thứ này, `[CUT-01]` không thể lên ✅ Done dù pipeline đã chạy đúng trên dữ liệu thật.
 
 **Edge cases:**
 | Tình huống | Xử lý |

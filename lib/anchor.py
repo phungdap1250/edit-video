@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from difflib import SequenceMatcher
 
+from lib import timeline
 from lib.errors import AIEditorError
 
 ID_PREFIX = "w"
@@ -61,52 +62,13 @@ def inherit_ids(
     return new_words, next_id, lost
 
 
-def build_timeline_map(
-    words: list[dict], cut_items: list[dict], *, padding_ms: int = 100
-) -> dict[str, tuple[float, float]]:
-    """Ánh xạ word.id → (start, end) trên timeline SAU KHI CẮT.
-
-    Từ nằm trong một cut `accepted` bị loại khỏi map — mọi neo trỏ vào nó là
-    neo mồ côi và bị `check_anchor_integrity.py` bắt.
-    """
-    removed = _removed_word_ids(words, cut_items)
-    pad = padding_ms / 1000.0
-
-    timeline: dict[str, tuple[float, float]] = {}
-    cursor = 0.0
-    previous_end: float | None = None
-
-    for word in words:
-        if word["id"] in removed:
-            previous_end = None
-            continue
-        start, end = float(word["start"]), float(word["end"])
-        if previous_end is None:
-            cursor += pad if timeline else 0.0
-        else:
-            cursor += max(0.0, start - previous_end)
-        timeline[word["id"]] = (round(cursor, 3), round(cursor + (end - start), 3))
-        cursor += end - start
-        previous_end = end
-
-    return timeline
-
-
-def _removed_word_ids(words: list[dict], cut_items: list[dict]) -> set[str]:
-    order = {w["id"]: i for i, w in enumerate(words)}
-    removed: set[str] = set()
-    for item in cut_items:
-        if item.get("status") != "accepted" or item.get("kind") == "silence":
-            continue
-        start, end = item.get("anchor_start"), item.get("anchor_end")
-        if start not in order or end not in order:
-            raise AIEditorError(
-                f"Cut {item.get('id')} neo vào từ không tồn tại: {start} → {end}",
-                suggestion="Chạy: python -m tools.reanchor",
-            )
-        for word in words[order[start] : order[end] + 1]:
-            removed.add(word["id"])
-    return removed
+# build_timeline_map sống ở lib/timeline.py cùng phép tính khoảng bị xoá — nơi
+# này chỉ tái xuất để mọi chỗ gọi vẫn theo đúng chữ ký TDD §5.2 bước 3.
+#
+# Hai neo biên w0000 / wEOF là ẢO: chúng chỉ tồn tại trong bảng tra của
+# timeline.py, KHÔNG nằm trong transcript.words[]. Nhét chúng vào words[] sẽ
+# làm hỏng khoá diff (text, start) của inherit_ids và len vào lớp caption.
+build_timeline_map = timeline.build_timeline_map
 
 
 def resolve(anchor: str, timeline: dict[str, tuple[float, float]]) -> tuple[float, float]:

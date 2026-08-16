@@ -44,7 +44,7 @@ def test_inherit_ids_khong_ke_thua_khi_lech_qua_2s():
 
 def test_build_timeline_map_dong_khoang_lang():
     src = words(("w0001", "a", 0.0, 1.0), ("w0002", "b", 3.0, 4.0))
-    timeline = anchor.build_timeline_map(src, [], padding_ms=0)
+    timeline = anchor.build_timeline_map(src, [], duration_sec=4.0, padding_sec=0)
     assert timeline["w0001"] == (0.0, 1.0)
     assert timeline["w0002"] == (3.0, 4.0)  # chưa cắt thì khoảng lặng giữ nguyên
 
@@ -53,7 +53,7 @@ def test_build_timeline_map_loai_tu_bi_cat():
     src = words(("w0001", "a", 0.0, 1.0), ("w0002", "ờ", 1.0, 1.4), ("w0003", "b", 1.4, 2.0))
     cuts = [{"id": "cut_001", "kind": "filler", "status": "accepted",
              "anchor_start": "w0002", "anchor_end": "w0002"}]
-    timeline = anchor.build_timeline_map(src, cuts, padding_ms=0)
+    timeline = anchor.build_timeline_map(src, cuts, duration_sec=2.0, padding_sec=0)
     assert "w0002" not in timeline
     assert timeline["w0003"][0] < 1.4  # timeline dồn lại sau khi cắt
 
@@ -62,4 +62,5 @@ def test_cut_bi_reject_khong_lam_mat_tu():
     src = words(("w0001", "a", 0.0, 1.0), ("w0002", "thì", 1.0, 1.2))
     cuts = [{"id": "cut_001", "kind": "filler", "status": "rejected",
              "anchor_start": "w0002", "anchor_end": "w0002"}]
-    assert "w0002" in anchor.build_timeline_map(src, cuts)
+    timeline = anchor.build_timeline_map(src, cuts, duration_sec=1.2)
+    assert "w0002" in timeline
