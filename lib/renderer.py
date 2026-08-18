@@ -20,11 +20,12 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 from html import escape as escape_html
 from pathlib import Path
 
-from lib import log
+from lib import log, overlay_content, paths
 from lib.errors import AIEditorError
 
 # Tăng tay khi đổi logic dựng — vào block_hash, làm mọi khối render lại (§6.3).
@@ -124,6 +125,24 @@ def create_project(project_dir: Path, width: int, height: int, fps: int) -> tupl
         )
     log.info(f"đã sinh project HyperFrames ({preset}) tại {project_dir.name}/")
     return _RESOLUTION_PRESETS[preset]
+
+
+def link_source_asset(project_dir: Path, source: Path) -> str:
+    """Đưa source/raw.mp4 vào hf/assets/ — symlink trước, copy nếu khác filesystem.
+
+    Idempotent, gọi được từ nhiều step (05 dựng scene xem trước cần asset này
+    TRƯỚC KHI 07 chạy build_video_track — thứ tự pipeline 01→07).
+    """
+    assets = project_dir / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    target = assets / "source.mp4"
+    if target.exists() or target.is_symlink():
+        target.unlink()
+    try:
+        target.symlink_to(source.resolve())
+    except OSError:
+        shutil.copy2(source, target)
+    return "assets/source.mp4"
 
 
 def build_video_track(
@@ -384,9 +403,194 @@ def resolve_embeddable_font(style) -> str:
     return _SAFE_FALLBACK_FONT
 
 
-def add_overlay_layer(scene_id: str, html_path: Path, t_in: float, t_out: float) -> None:
-    """Lớp 3 — đồ hoạ motion. Việc của [MGX-01]."""
-    raise NotImplementedError("[MGX-01] — xem docs/TDD.md §5.5")
+OVERLAY_TRACK_INDEX = 25
+OVERLAY_DEFAULT_DURATION_SEC = 2.5  # thời lượng hiển thị tối thiểu nếu câu nói ngắn hơn
+
+
+def overlay_timing(item: dict, timeline_map: dict) -> tuple[float, float] | None:
+    """(t_start, t_end) trên timeline SAU CẮT — None nếu neo đã mất (đoạn bị [CUT]).
+
+    `t_end` không bao giờ vượt quá tổng thời lượng video (mốc EOF trong
+    `timeline_map`) — video ngắn với đoạn kích hoạt gần cuối mà không kẹp lại
+    sẽ tạo ra `data-duration` cho clip dài hơn cả composition, hỏng render.
+    """
+    from lib.timeline import EOF_ID
+
+    start_pos = timeline_map.get(item.get("anchor_start"))
+    end_pos = timeline_map.get(item.get("anchor_end"))
+    if start_pos is None or end_pos is None:
+        return None
+    t_start = round(start_pos[0], 3)
+    t_end = round(max(end_pos[1], t_start + OVERLAY_DEFAULT_DURATION_SEC), 3)
+    total_duration = timeline_map.get(EOF_ID)
+    if total_duration is not None:
+        t_end = min(t_end, round(total_duration[0], 3))
+    return t_start, max(t_end, t_start)
+
+
+def _enrich_list_reveals(item: dict, timeline_map: dict, t_start: float, base: float) -> dict:
+    """Gán `_reveal_at_sec` (mốc GSAP cục bộ, tính từ `base`) cho từng mục con
+    của `danh_sach_bung_dan` — TDD §5.5: "từng mục chỉ hiện khi câu nói tới"."""
+    if item["type"] != "danh_sach_bung_dan":
+        return {**item, "_t_start": t_start}
+    content = dict(item["content"])
+    new_items = []
+    for entry in content["items"]:
+        pos = timeline_map.get(entry.get("reveal_at_word"))
+        reveal_sec = round(pos[0] - base, 3) if pos is not None else t_start
+        new_items.append({**entry, "_reveal_at_sec": reveal_sec})
+    return {**item, "_t_start": t_start, "content": {**content, "items": new_items}}
+
+
+def build_overlay_track(
+    project_dir: Path, overlay_items: list[dict], frame, timeline_map: dict,
+    canvas_width: int, canvas_height: int,
+) -> int:
+    """Lớp 3 — ghép đồ hoạ ĐÃ DUYỆT vào timeline chính (giống build_caption_track).
+
+    PRD [MGX] Done khi: "Không đồ hoạ nào vào video khi chưa duyệt" — chỉ mục
+    `status == "approved"` được ghép; neo mất do bị cắt ở [CUT] thì bỏ qua,
+    báo rõ chứ không âm thầm bỏ.
+    """
+    approved = [i for i in overlay_items if i.get("status") == "approved"]
+    if not approved:
+        return 0
+
+    index_html = project_dir / "index.html"
+    html = index_html.read_text(encoding="utf-8")
+    match = re.search(r'data-composition-id="([^"]+)"', html)
+    if not match:
+        raise AIEditorError("Không tìm thấy data-composition-id trong index.html")
+    comp_id = match.group(1)
+    if CLIPS_MARKER not in html:
+        raise AIEditorError(
+            "Không tìm thấy điểm chèn clip trong index.html",
+            suggestion="Chạy lại build_video_track trước build_overlay_track",
+        )
+    timeline_marker = f'window.__timelines["{comp_id}"] = tl;'
+    if timeline_marker not in html:
+        raise AIEditorError("Không tìm thấy dòng đăng ký timeline trong index.html")
+
+    clip_divs, css_blocks, tween_lines, all_variables = [], [], [], []
+    for item in approved:
+        timing = overlay_timing(item, timeline_map)
+        if timing is None:
+            log.warn(f"{item['id']}: neo đã mất (đoạn kích hoạt bị [CUT] cắt) — bỏ qua")
+            continue
+        t_start, t_end = timing
+        enriched = _enrich_list_reveals(item, timeline_map, t_start, base=0.0)
+        frag = overlay_content.build_fragment(enriched, frame, t_start)
+        style = overlay_content.box_style(item, canvas_width, canvas_height)
+        duration = round(t_end - t_start, 3)
+        clip_divs.append(
+            f'      <div class="clip ov-card" id="{item["id"]}" data-start="{t_start}" '
+            f'data-duration="{duration}" data-track-index="{OVERLAY_TRACK_INDEX}" '
+            f'style="{style}">{frag["inner_html"]}</div>'
+        )
+        css_blocks.append(frag["css"])
+        tween_lines.extend(frag["tween_lines"])
+        all_variables.extend(frag["variables"])
+
+    if not clip_divs:
+        return 0
+
+    html = html.replace(CLIPS_MARKER, "\n".join(clip_divs) + "\n" + CLIPS_MARKER)
+    html = html.replace("    </style>", "      " + "\n      ".join(css_blocks) + "\n    </style>")
+    html = html.replace(timeline_marker, "\n      ".join(tween_lines) + "\n      " + timeline_marker)
+    html = _declare_variables(html, all_variables)
+
+    index_html.write_text(html, encoding="utf-8")
+    log.info(f"đã ghi {len(clip_divs)} đồ hoạ vào lớp 3, {len(all_variables)} biến")
+    return len(clip_divs)
+
+
+def _declare_variables(html: str, variables: list[dict]) -> str:
+    """Khai báo `data-composition-variables` trên thẻ `<html>` gốc (TDD §6.5,
+    variables-and-media.md) — bỏ qua nếu đã có (idempotent khi chạy lại)."""
+    if "data-composition-variables" in html or not variables:
+        return html
+    decl = json.dumps(variables, ensure_ascii=False)
+    return re.sub(r"<html\b", f"<html data-composition-variables='{decl}'", html, count=1)
+
+
+def build_overlay_scene(
+    project_dir: Path, item: dict, frame, timeline_map: dict,
+    canvas_width: int, canvas_height: int, video_rel_path: str = "../assets/source.mp4",
+) -> Path | None:
+    """Sinh `hf/scenes/ov_XXX.html` — composition ĐỘC LẬP, mở thẳng bằng trình
+    duyệt được, cho trang `/storyboard` xem trước — TDD §5.5. `None` nếu neo
+    đã mất.
+
+    `data-start`/`data-media-start` là quy ước CHUẨN HyperFrames (đúng khi
+    file này được CLI thật mount), nhưng bản thân trình duyệt không hiểu các
+    thuộc tính đó — mở file trực tiếp (không qua `npx hyperframes preview`)
+    thì `<video>` chỉ đứng yên ở khung đầu. Để "bấm Play chạy thật, có tiếng,
+    tua được" hoạt động ngay khi mở file, thêm 1 đoạn JS runtime RIÊNG (không
+    thuộc composition chính thức): khoá `<video controls>` vào đúng đoạn
+    `[t_start, t_end]` của nguồn, và mỗi lần `timeupdate` thì `tl.seek()` theo
+    đúng vị trí phát THẬT — overlay luôn khớp video, kể cả khi tua tay.
+    """
+    timing = overlay_timing(item, timeline_map)
+    if timing is None:
+        return None
+    t_start, t_end = timing
+    duration = round(t_end - t_start, 3)
+    local_start = 0.3  # độ trễ nhỏ để khung hình ổn định trước khi đồ hoạ vào
+
+    enriched = _enrich_list_reveals(item, timeline_map, local_start, base=t_start)
+    frag = overlay_content.build_fragment(enriched, frame, local_start)
+    style = overlay_content.box_style(item, canvas_width, canvas_height)
+
+    scenes_dir = project_dir / "scenes"
+    scenes_dir.mkdir(parents=True, exist_ok=True)
+    scene_path = scenes_dir / f"{item['id']}.html"
+
+    video_style = (
+        f"position:absolute;inset:0;width:{canvas_width}px;height:{canvas_height}px;object-fit:cover"
+    )
+    tween_block = "\n      ".join(frag["tween_lines"])
+    scene_path.write_text(
+        f"<!doctype html>\n<html lang=\"vi\">\n<head>\n<meta charset=\"UTF-8\">\n"
+        f'<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>\n'
+        "<style>\n"
+        "  * { margin: 0; padding: 0; box-sizing: border-box; }\n"
+        f"  html, body {{ width: {canvas_width}px; height: {canvas_height}px; overflow: hidden; background: #000; }}\n"
+        f"  #root {{ position: relative; width: {canvas_width}px; height: {canvas_height}px; overflow: hidden; background: #000; }}\n"
+        f"  {frag['css']}\n"
+        "</style>\n</head>\n<body>\n"
+        f'  <div id="root" data-composition-id="{item["id"]}" data-start="0" data-duration="{duration}" '
+        f'data-width="{canvas_width}" data-height="{canvas_height}">\n'
+        f'    <video id="preview-video" src="{video_rel_path}" style="{video_style}" data-start="0" '
+        f'data-duration="{duration}" data-media-start="{t_start}" data-track-index="0" '
+        f'controls playsinline></video>\n'
+        f'    <div class="clip ov-card" id="{item["id"]}-card" data-start="0" data-duration="{duration}" '
+        f'data-track-index="1" style="{style}">{frag["inner_html"]}</div>\n'
+        "  </div>\n  <script>\n"
+        "    window.__timelines = window.__timelines || {};\n"
+        "    const tl = gsap.timeline({ paused: true });\n"
+        f"    {tween_block}\n"
+        f'    window.__timelines["{item["id"]}"] = tl;\n\n'
+        "    // Runtime xem trước — KHÔNG thuộc composition, chỉ để mở file trực\n"
+        "    // tiếp bằng trình duyệt cũng phát được (xem docstring hàm sinh ra file này).\n"
+        "    (function () {\n"
+        f"      const mediaStart = {t_start};\n"
+        f"      const clipDuration = {duration};\n"
+        "      const video = document.getElementById(\"preview-video\");\n"
+        "      const seekToStart = () => { video.currentTime = mediaStart; };\n"
+        "      video.addEventListener(\"loadedmetadata\", seekToStart);\n"
+        "      video.addEventListener(\"timeupdate\", () => {\n"
+        "        const local = video.currentTime - mediaStart;\n"
+        "        if (local >= clipDuration) { video.pause(); seekToStart(); return; }\n"
+        "        tl.seek(Math.max(0, local));\n"
+        "      });\n"
+        "      video.addEventListener(\"play\", () => {\n"
+        "        if (video.currentTime < mediaStart || video.currentTime > mediaStart + clipDuration) seekToStart();\n"
+        "      });\n"
+        "    })();\n"
+        "  </script>\n</body>\n</html>\n",
+        encoding="utf-8",
+    )
+    return scene_path
 
 
 def add_cutaway_layer(scene_id: str, image: Path, t_in: float, t_out: float) -> None:
@@ -394,14 +598,22 @@ def add_cutaway_layer(scene_id: str, image: Path, t_in: float, t_out: float) -> 
     raise NotImplementedError("[JMP-01] — xem docs/TDD.md §5.4")
 
 
-def write_variables(vars_dict: dict) -> None:
-    """Đồng bộ MỘT CHIỀU plan → Variables (§6.5). Cấm đọc ngược. Việc của [MGX-01]."""
-    raise NotImplementedError("[MGX-01] — xem docs/TDD.md §6.5")
+def write_variables(vars_dict: dict) -> Path:
+    """Đồng bộ MỘT CHIỀU plan → Variables (§6.5): ghi `hf/variables.json` —
+    giá trị override truyền vào `npx hyperframes render --variables-file` khi
+    render, để "sửa chữ, thấy đổi" không cần chạy lại toàn bộ pipeline."""
+    path = paths.HF / "variables.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(vars_dict, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
 
 
 def read_variables() -> dict:
-    """CHỈ dùng cho checks/check_variables_sync.py. Việc của [MGX-01]."""
-    raise NotImplementedError("[MGX-01] — xem docs/TDD.md §6.5")
+    """CHỈ dùng cho checks/check_variables_sync.py — cấm đọc ngược vào plan (§6.5)."""
+    path = paths.HF / "variables.json"
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def check(project_dir: Path) -> None:
@@ -445,11 +657,11 @@ def render(project_dir: Path, out: Path, *, quality: str) -> Path:
         raise AIEditorError(f"quality không hợp lệ: {quality} (chỉ nhận draft|high)")
 
     out.parent.mkdir(parents=True, exist_ok=True)
-    result = _run(
-        ["render", "--quality", quality, "--output", str(out.resolve())],
-        cwd=project_dir,
-        timeout=2400,
-    )
+    args = ["render", "--quality", quality, "--output", str(out.resolve())]
+    variables_file = project_dir / "variables.json"
+    if variables_file.exists():
+        args += ["--variables-file", str(variables_file.resolve())]
+    result = _run(args, cwd=project_dir, timeout=2400)
     if result.returncode != 0 or not out.exists() or out.stat().st_size == 0:
         raise AIEditorError(
             f"Render thất bại: {result.stderr.strip()[-400:]}",

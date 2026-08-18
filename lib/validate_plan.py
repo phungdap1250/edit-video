@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from lib import field_path
 from lib.errors import AIEditorError
 
 SCHEMAS: dict[str, dict[str, Any]] = {
@@ -103,6 +104,8 @@ def validate(kind: str, items: list[dict], ctx: dict | None = None) -> list[str]
         errors += _check_anchors_exist(items, ctx)
     if kind == "cutaway":
         errors += _check_cutaway_budget(items, ctx)
+    if kind == "overlay":
+        errors += _check_overlay_layout(items, ctx)
 
     return errors
 
@@ -151,6 +154,53 @@ def _check_cutaway_budget(items: list[dict], ctx: dict) -> list[str]:
         for item in ai_items:
             if float(item.get("t_dur", 0)) > max_cover:
                 errors.append(f"{item.get('id')}: che mặt {item.get('t_dur')}s, vượt trần {max_cover}s")
+
+    return errors
+
+
+MIN_GAP_SEC = 0.5  # TDD §5.5 luật 2: đồ hoạ mới vào sau đồ hoạ cũ ra hết + cách ≥500ms
+
+
+def _check_overlay_layout(items: list[dict], ctx: dict) -> list[str]:
+    """khong_ghi_de_duong_dan_trong_edited_fields · khong_qua_1_do_hoa_cung_luc ·
+    cach_nhau_toi_thieu_500ms — TDD §5.5 luật bố cục.
+
+    Việc khoá `edited_fields[]` đã được `tools.claude_write._merge_item()` thi
+    hành TRƯỚC khi tới đây — kiểm lại ở đây là lớp phòng thủ thứ 2, phát hiện
+    khi có ai ghi thẳng qua `validate_plan.raise_if_invalid()` mà bỏ qua bước
+    merge đó.
+    """
+    errors: list[str] = []
+    disk_by_id = ctx.get("disk_items_by_id", {})
+    for item in items:
+        old = disk_by_id.get(item.get("id"))
+        if not old:
+            continue
+        for path in old.get("edited_fields", []):
+            if field_path.get_path(item, path) != field_path.get_path(old, path):
+                errors.append(f"{item.get('id')}: ghi đè trường đã khoá '{path}' (nằm trong edited_fields)")
+
+    timeline_map = ctx.get("timeline_map")
+    if not timeline_map:
+        return errors
+
+    windows = []
+    for item in items:
+        if item.get("status") == "rejected":
+            continue
+        start = timeline_map.get(item.get("anchor_start"))
+        end = timeline_map.get(item.get("anchor_end"))
+        if start is None or end is None:
+            continue
+        windows.append((start[0], end[1], item.get("id")))
+    windows.sort()
+
+    for (a_start, a_end, a_id), (b_start, b_end, b_id) in zip(windows, windows[1:]):
+        gap = b_start - a_end
+        if gap < 0:
+            errors.append(f"{a_id} và {b_id}: hiển thị chồng nhau — không quá 1 đồ hoạ cùng lúc")
+        elif gap < MIN_GAP_SEC:
+            errors.append(f"{a_id} và {b_id}: cách nhau {gap*1000:.0f}ms, dưới trần {int(MIN_GAP_SEC*1000)}ms")
 
     return errors
 

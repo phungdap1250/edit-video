@@ -94,6 +94,25 @@ function reviewPage(kind) {
       item.decided_at = new Date().toISOString();
     },
 
+    /* Sửa chữ trên /storyboard (PRD [MGX]) — content là JSON tự do (4 loại đồ
+       hoạ có cấu trúc khác nhau), nên ô sửa là 1 textarea JSON thay vì form
+       riêng cho từng loại. Khoá CẢ "content" qua edited_fields[] — thô hơn
+       khoá theo đường dẫn con (content.number) mà TDD §3.4 mô tả, nhưng an
+       toàn: pipeline sinh lại sẽ không đụng bất kỳ phần nào của content này. */
+    editContent(item, rawJson) {
+      let parsed;
+      try {
+        parsed = JSON.parse(rawJson);
+      } catch (e) {
+        this.message = `content không phải JSON hợp lệ: ${e.message}`;
+        return;
+      }
+      item.content = parsed;
+      item.edited_fields = Array.from(new Set([...(item.edited_fields || []), "content"]));
+      item.decided_by = "user";
+      item.decided_at = new Date().toISOString();
+    },
+
     /* Nhãn lý do cho trang /cut — PRD [CUT]: "nhãn lý do, tầng phát hiện và độ tin cậy". */
     reasonLabel(item) {
       if (item.kind === "silence") return "khoảng lặng";

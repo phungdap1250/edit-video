@@ -12,9 +12,11 @@
   <script defer src="/static/alpine.min.js"></script>
 </head>
 <!--
-  KHUNG TRỐNG CÓ CHỦ Ý. Bố cục lấy từ ui-demo/ (xem CLAUDE.md) — chưa có bản
-  thiết kế thì không tự sáng tạo layout mới. Phần state đã nối sẵn qua review.js.
-  Yêu cầu chức năng: bản ĐỘNG: mỗi thẻ phát được chuyển động + audio gốc tại giây đó, tua được, phát toàn bộ liên tục, sửa chữ trực tiếp (PRD [MGX])
+  KHUNG TRỐNG CÓ CHỦ Ý. Bố cục lấy từ ui-demo/ (xem CLAUDE.md) — ui-demo/ rỗng
+  nên đây là bản chức năng tối thiểu, đủ dữ liệu cho "Done khi" (PRD [MGX]),
+  chưa phải bố cục cuối cùng. Mỗi thẻ là 1 <iframe> nạp đúng file
+  hf/scenes/<id>.html — composition độc lập TỰ PHÁT ĐƯỢC (video controls thật,
+  có tiếng, tua được, GSAP timeline riêng đồng bộ theo video đang phát).
 -->
 <body x-data="reviewPage('storyboard')" x-cloak>
   <header class="bar">
@@ -39,11 +41,23 @@
 
   <main x-show="!loading">
     <template x-for="item in items" :key="item.id">
-      <article class="item" :class="item.status">
-        <!-- TODO(ui-demo): thẻ phát được (video + overlay HTML) + ô sửa chữ ghi vào edited_fields[] -->
-        <span x-text="item.id"></span>
-        <button @click="setStatus(item, 'accepted')">Giữ</button>
-        <button @click="setStatus(item, 'rejected')">Bỏ</button>
+      <article class="item overlay-item" :class="item.status">
+        <iframe
+          :src="media('hf/scenes/' + item.id + '.html')"
+          class="overlay-frame"
+          loading="lazy"
+        ></iframe>
+        <div class="overlay-meta">
+          <span class="anchor-text" x-text="item.anchor_text"></span>
+          <span class="reason" x-text="item.type"></span>
+          <textarea
+            class="overlay-content-edit"
+            :value="JSON.stringify(item.content, null, 2)"
+            @change="editContent(item, $event.target.value)"
+          ></textarea>
+        </div>
+        <button @click="setStatus(item, 'approved')" :disabled="item.status === 'approved'">Giữ</button>
+        <button @click="setStatus(item, 'rejected')" :disabled="item.status === 'rejected'">Bỏ</button>
       </article>
     </template>
   </main>

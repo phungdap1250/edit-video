@@ -56,6 +56,7 @@ def page(page: str):
 # ── Dữ liệu ───────────────────────────────────────────────────────
 @app.get("/api/plan/<kind>")
 def get_plan(kind: str):
+    kind = PLAN_KIND.get(kind, kind)
     plan, version = plan_io.load_plan(_plan_path(kind))
     plan_io.snapshot_base(kind, plan)  # mốc so cho merge 3 chiều
     return jsonify({"ok": True, "version": version, "token": SESSION_TOKEN, **plan})
@@ -63,6 +64,7 @@ def get_plan(kind: str):
 
 @app.post("/api/plan/<kind>")
 def post_plan(kind: str):
+    kind = PLAN_KIND.get(kind, kind)
     body = request.get_json(force=True)
     try:
         version, conflicts, summary = plan_io.promote_draft(
@@ -100,13 +102,13 @@ def post_plan(kind: str):
 
 @app.post("/api/draft/<kind>")
 def post_draft(kind: str):
-    plan_io.save_draft(kind, request.get_json(force=True))
+    plan_io.save_draft(PLAN_KIND.get(kind, kind), request.get_json(force=True))
     return jsonify({"ok": True, "saved_at": now_iso()})
 
 
 @app.get("/api/draft/<kind>")
 def get_draft(kind: str):
-    return jsonify({"ok": True, "draft": plan_io.load_draft(kind)})
+    return jsonify({"ok": True, "draft": plan_io.load_draft(PLAN_KIND.get(kind, kind))})
 
 
 @app.get("/api/transcript")

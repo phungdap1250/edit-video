@@ -122,11 +122,6 @@ def test_build_video_track_tu_choi_khi_template_da_bi_sua(tmp_path):
         renderer.build_video_track(tmp_path, "assets/source.mp4", [(0.0, 1.0)], 1080, 1920, 30)
 
 
-def test_add_overlay_layer_chua_lam_bao_dung_story():
-    with pytest.raises(NotImplementedError, match="MGX-01"):
-        renderer.add_overlay_layer("s1", None, 0, 1)
-
-
 def test_add_cutaway_layer_chua_lam_bao_dung_story():
     with pytest.raises(NotImplementedError, match="JMP-01"):
         renderer.add_cutaway_layer("s1", None, 0, 1)

@@ -17,7 +17,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from lib import cli, config, log, media, paths, plan_io, renderer, timeline
+from lib import cli, config, frame as frame_lib, log, media, paths, plan_io, renderer, timeline
 from lib.errors import AIEditorError
 
 
@@ -58,11 +58,12 @@ def main(args) -> dict:
     canvas_width, canvas_height = renderer.create_project(
         paths.HF, info["width"], info["height"], cfg.render.fps
     )
-    asset_rel = _link_source_asset(paths.HF, source)
+    asset_rel = renderer.link_source_asset(paths.HF, source)
     renderer.build_video_track(
         paths.HF, asset_rel, segments, canvas_width, canvas_height, cfg.render.fps
     )
     _build_captions(canvas_width, canvas_height)
+    _build_overlays(transcript, cut_plan, padding_sec, canvas_width, canvas_height)
     renderer.check(paths.HF)
 
     out = paths.OUT / ("final.mp4" if args.final else "draft.mp4")
@@ -95,19 +96,19 @@ def _build_captions(canvas_width: int, canvas_height: int) -> None:
     renderer.build_caption_track(paths.HF, caption_plan, style, canvas_width, canvas_height)
 
 
-def _link_source_asset(project_dir: Path, source: Path) -> str:
-    """Đưa source/raw.mp4 vào hf/assets/ — symlink trước, copy nếu khác filesystem."""
-    assets = project_dir / "assets"
-    assets.mkdir(parents=True, exist_ok=True)
-    target = assets / "source.mp4"
-    if target.exists() or target.is_symlink():
-        target.unlink()
-    try:
-        target.symlink_to(source.resolve())
-    except OSError:
-        shutil.copy2(source, target)
-    return "assets/source.mp4"
-
+def _build_overlays(transcript, cut_plan, padding_sec: float, canvas_width: int, canvas_height: int) -> None:
+    """Lớp 3 — chưa có overlay_plan.json (MGX-01 chưa chạy) thì bỏ qua, video vẫn dựng được."""
+    if not paths.OVERLAY_PLAN.exists():
+        log.info("chưa có overlay_plan.json — bỏ qua lớp đồ hoạ")
+        return
+    overlay_plan, _ = plan_io.load_plan(paths.OVERLAY_PLAN)
+    timeline_map = timeline.build_timeline_map(
+        transcript["words"], cut_plan["items"], transcript["duration_sec"], padding_sec=padding_sec
+    )
+    frame = frame_lib.load()
+    renderer.build_overlay_track(
+        paths.HF, overlay_plan.get("items", []), frame, timeline_map, canvas_width, canvas_height
+    )
 
 def _save_manifest(segments: list[tuple[float, float]], quality: str, out: Path) -> None:
     """render_manifest.json — TDD §3.1. Khung 1 khối duy nhất, chưa chia nhỏ."""

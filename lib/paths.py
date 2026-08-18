@@ -22,7 +22,7 @@ OUT = ROOT / "out"
 WEB = ROOT / "web"
 
 # Thư mục được phép phục vụ qua GET /media/<path> — allowlist, TDD §10.2
-MEDIA_ALLOWLIST = (WORK, ASSETS, SOURCE, OUT)
+MEDIA_ALLOWLIST = (WORK, ASSETS, SOURCE, OUT, HF)
 
 # Tầng dữ liệu
 TRANSCRIPT = PLANS / "transcript.json"

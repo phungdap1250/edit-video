@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from lib import budget, cli, config, paths, plan_io, validate_plan
+from lib import budget, cli, config, field_path, paths, plan_io, timeline, validate_plan
 from lib.errors import AIEditorError
 from lib.timeline import BOF_ID, EOF_ID
 
@@ -35,12 +35,13 @@ def main(args) -> dict:
     else:
         disk, version = {list_field: []}, 0
 
-    items_by_id = {item["id"]: item for item in disk.get(list_field, []) if "id" in item}
+    disk_items_by_id = {item["id"]: item for item in disk.get(list_field, []) if "id" in item}
+    items_by_id = dict(disk_items_by_id)
     for item in incoming:
-        items_by_id[item["id"]] = {**items_by_id.get(item["id"], {}), **item}
+        items_by_id[item["id"]] = _merge_item(items_by_id.get(item["id"], {}), item)
     merged_items = list(items_by_id.values())
 
-    ctx = _build_ctx(args.kind)
+    ctx = _build_ctx(args.kind, disk_items_by_id)
     validate_plan.raise_if_invalid(args.kind, merged_items, ctx)
 
     if args.dry_run:
@@ -59,6 +60,17 @@ def main(args) -> dict:
     }
 
 
+def _merge_item(old: dict, new: dict) -> dict:
+    """Merge nông rồi PHỤC HỒI mọi đường dẫn trong `edited_fields[]` của bản cũ —
+    script sinh lại kế hoạch không được ghi đè chữ người dùng đã sửa (TDD §3.4)."""
+    merged = {**old, **new}
+    for path in old.get("edited_fields", []):
+        old_value = field_path.get_path(old, path)
+        if old_value is not None:
+            field_path.set_path(merged, path, old_value)
+    return merged
+
+
 def _load_items(path: Path) -> list[dict]:
     if not path.exists():
         raise AIEditorError(f"Không tìm thấy file --items {path}")
@@ -68,7 +80,7 @@ def _load_items(path: Path) -> list[dict]:
     return data
 
 
-def _build_ctx(kind: str) -> dict:
+def _build_ctx(kind: str, disk_items_by_id: dict | None = None) -> dict:
     ctx: dict = {}
     if paths.TRANSCRIPT.exists():
         transcript, _ = plan_io.load_plan(paths.TRANSCRIPT)
@@ -76,7 +88,24 @@ def _build_ctx(kind: str) -> dict:
     if kind == "cutaway":
         ctx["cfg"] = config.cut_config()
         ctx["month_used"] = budget.month_used()
+    if kind == "overlay":
+        ctx["disk_items_by_id"] = disk_items_by_id or {}
+        ctx["timeline_map"] = _build_timeline_map()
     return ctx
+
+
+def _build_timeline_map() -> dict | None:
+    if not (paths.TRANSCRIPT.exists() and paths.CUT_PLAN.exists()):
+        return None
+    transcript, _ = plan_io.load_plan(paths.TRANSCRIPT)
+    cut_plan, _ = plan_io.load_plan(paths.CUT_PLAN)
+    if cut_plan.get("approved_at") is None:
+        return None
+    cfg = config.cut_config()
+    padding_sec = cfg.silence.padding_each_side_ms / 1000.0
+    return timeline.build_timeline_map(
+        transcript["words"], cut_plan["items"], transcript["duration_sec"], padding_sec=padding_sec
+    )
 
 
 def _save(path: Path, document: dict, current_version: int) -> int:

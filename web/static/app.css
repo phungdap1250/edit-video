@@ -18,3 +18,7 @@ body { margin: 0; font-family: "Be Vietnam Pro", system-ui, sans-serif; }
 .cutaway-missing { width: 96px; height: 54px; display: flex; align-items: center;
                     justify-content: center; background: #f5f5f5; color: #999; font-size: 11px; }
 .cutaway-meta { flex: 1; display: flex; flex-direction: column; }
+.overlay-item { display: flex; align-items: flex-start; gap: 8px; }
+.overlay-frame { width: 240px; height: 320px; border: 1px solid #e5e5e5; background: #000; }
+.overlay-meta { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.overlay-content-edit { width: 100%; min-height: 90px; font-family: monospace; font-size: 12px; }

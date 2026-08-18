@@ -126,3 +126,27 @@ def cut_segments(video: Path, segments: list[tuple[float, float]], out: Path, fp
         "Áp cắt",
     )
     return out
+
+
+def ensure_browser_playable(video: Path, cache: Path) -> Path:
+    """Trình duyệt (kể cả Chromium của Playwright) thường KHÔNG decode được
+    HEVC/H.265 — video "phát" đúng thời gian nhưng khung hình đứng đen, chỉ lộ
+    ra khi mở thật (không unit test nào bắt được). Bản thân HyperFrames CLI xử
+    lý y hệt: tự cache 1 bản proxy H.264 cho preview khi phát hiện HEVC.
+
+    Trả `video` nguyên trạng nếu đã là H.264 (không mã hoá lại vô ích); trả
+    đường dẫn `cache` (mã hoá 1 lần, dùng lại các lần sau) nếu là HEVC.
+    """
+    if probe(video)["vcodec"] not in ("hevc", "h265"):
+        return video
+    if cache.exists() and cache.stat().st_mtime >= video.stat().st_mtime:
+        return cache
+
+    log.info(f"{video.name}: mã HEVC không phát được trong trình duyệt — dựng bản xem trước H.264")
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    _run(
+        ["ffmpeg", "-y", "-i", str(video), "-c:v", "libx264", "-preset", "veryfast",
+         "-crf", "20", "-c:a", "aac", "-b:a", "128k", str(cache)],
+        "Dựng bản xem trước H.264",
+    )
+    return cache
