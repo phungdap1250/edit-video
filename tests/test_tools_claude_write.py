@@ -29,6 +29,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, "PLANS", tmp_path / "plans")
     monkeypatch.setattr(paths, "TRANSCRIPT", tmp_path / "plans" / "transcript.json")
     monkeypatch.setattr(paths, "CUTAWAY_PLAN", tmp_path / "plans" / "cutaway_plan.json")
+    monkeypatch.setattr(paths, "CAPTION_PLAN", tmp_path / "plans" / "caption_plan.json")
     monkeypatch.setattr(paths, "PLAN_BY_KIND", {
         "cut": tmp_path / "plans" / "cut_plan.json",
         "cutaway": tmp_path / "plans" / "cutaway_plan.json",
@@ -98,3 +99,35 @@ def test_dry_run_khong_ghi_gi(isolated):
     ))
     assert result["dry_run"] is True
     assert not paths.CUTAWAY_PLAN.exists()
+
+
+def test_caption_upsert_gan_emphasis_giu_nguyen_truong_khac(isolated):
+    """TDD §7.1 việc #2: Claude chỉ thêm emphasis_word_ids[] vào dòng steps/04 đã gom sẵn."""
+    module = _load()
+    paths.CAPTION_PLAN.write_text(json.dumps({
+        "version": 1, "mode": "karaoke_word",
+        "lines": [{"id": "cap_000", "word_ids": ["w0001", "w0002"], "text": "a b",
+                   "emphasis_word_ids": [], "t_start": 0.0, "t_end": 1.0}],
+    }), encoding="utf-8")
+    module_items = [{"id": "cap_000", "word_ids": ["w0001", "w0002"], "text": "a b",
+                      "emphasis_word_ids": ["w0002"], "t_start": 0.0, "t_end": 1.0}]
+
+    result = module.main(Namespace(
+        kind="caption", items=_items_file(isolated, module_items), dry_run=False, json=False, verbose=False
+    ))
+    assert result["written"] == 1
+    saved = json.loads(paths.CAPTION_PLAN.read_text(encoding="utf-8"))
+    assert saved["lines"][0]["emphasis_word_ids"] == ["w0002"]
+    assert "approved_at" not in saved  # caption_plan.json không có bước duyệt
+
+
+def test_caption_qua_3_tu_nhan_manh_thi_tu_choi(isolated):
+    from lib.errors import AIEditorError
+
+    module = _load()
+    items = [{"id": "cap_000", "word_ids": ["w1"], "text": "x",
+              "emphasis_word_ids": ["w1", "w2", "w3", "w4"]}]
+    with pytest.raises(AIEditorError):
+        module.main(Namespace(
+            kind="caption", items=_items_file(isolated, items), dry_run=False, json=False, verbose=False
+        ))

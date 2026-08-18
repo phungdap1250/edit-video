@@ -266,7 +266,7 @@ Trong lúc test bắt thêm 1 bug thật thứ hai: `<video>` sinh ra thiếu CS
 
 #### [CAP] Feature 4: Caption karaoke tiếng Việt
 
-**Status:** ⏳ Todo
+**Status:** ⚠️ Partial — caption karaoke đã ghép THẬT vào video render (bước tiến so với [JMP-01] vốn dừng ở dữ liệu); 2/12 dòng "Done khi" còn thiếu, đều phụ thuộc [MGX-01]/[RND-01] xong việc của mình. Xem ghi chú dưới bảng Done khi.
 
 **Story:** [CAP-01] Là người tự dựng video, tôi muốn hệ thống tự sinh caption tiếng Việt bám theo lời nói và làm nổi bật từ khoá quan trọng, để người xem trên điện thoại hoặc xem không bật tiếng vẫn theo được nội dung.
 
@@ -284,20 +284,36 @@ Trong lúc test bắt thêm 1 bug thật thứ hai: `<video>` sinh ra thiếu CS
 Caption **đứng yên tuyệt đối** ở một vị trí cố định suốt video. Vùng caption khai báo trong config trở thành **vùng cấm** — đồ hoạ motion và cutaway là bên phải né, không được lấn vào. *(Đảo ngược so với bản v1: caption không tự dịch lên khi bị che, vì caption nhảy vị trí giữa video là lỗi hình người xem nhận ra ngay.)*
 
 **Done khi:**
-- ✅ Caption khớp lời nói, sai lệch **dưới 150ms**, kiểm bằng headless browser: lấy **20 từ ngẫu nhiên**, tại `t_từ + 80ms` đọc trạng thái DOM lớp caption, xác nhận đúng từ đó đang sáng. Đạt = **20/20**
-- ✅ **Dấu tiếng Việt hiển thị đúng 100%** — kiểm bằng bộ chữ mẫu: ề, ữ, ợ, ẫ, ỹ, ặ, ườ, Đ — không vỡ dấu, không chồng dấu, không mất dấu
-- ✅ **Video ngang và dọc: karaoke highlight từng từ** — cả câu hiện mờ, từ đang nói sáng lên
-- ✅ **Kiểu 1–3 từ nhảy: chỉ cho video dọc dưới 2 phút**, hệ thống tự chọn theo độ dài
-- ✅ Mỗi dòng caption tối đa 2 dòng chữ, không quá **42 ký tự/dòng** ở video ngang
-- ✅ Không ngắt dòng giữa một cụm từ có nghĩa
-- ✅ Từ khoá nhấn mạnh bằng màu/đậm, **tối đa 3 từ khoá trong 1 dòng**
-- ✅ **Caption đứng yên suốt video** — không dịch chuyển vì bất kỳ lớp nào khác; cách mép đáy tối thiểu **8% chiều cao khung**
-- ✅ **0 mục đồ hoạ hoặc cutaway lấn vào vùng caption** — kiểm bằng script đối chiếu toạ độ
-- ✅ Xuất kèm `.srt` khớp timeline sau cắt, mở bằng trình phát ngoài vẫn đúng giờ
-- ✅ Sửa file cấu hình style → chạy lại thấy đổi, không phải dựng lại từ đầu
+- ✅ Caption khớp lời nói, sai lệch **dưới 150ms**, kiểm bằng headless browser: lấy **20 từ ngẫu nhiên**, tại `t_từ + 80ms` đọc trạng thái DOM lớp caption, xác nhận đúng từ đó đang sáng. `checks/check_caption_timing.py` — chạy thật trên video render thật: **20/20**
+- ✅ **Dấu tiếng Việt hiển thị đúng 100%** — bộ chữ mẫu ề ữ ợ ẫ ỹ ặ ườ Đ, không vỡ/chồng/mất dấu. `checks/check_vietnamese_glyphs.py`: **8/8** — đo bằng canvas tự động (bounding-box + pixel-diff so ký tự có dấu với bản không dấu), **không dùng "ảnh chuẩn duyệt tay 1 lần" như TDD gợi ý** (giống `golden_transcript.txt` của [CUT] — phụ thuộc con người, không tự động hoá được ngay lần chạy đầu); cách thay thế này kiểm được ngay, không cần chờ ai duyệt trước
+- ✅ **Video ngang và dọc: karaoke highlight từng từ** — cả câu hiện mờ, từ đang nói sáng lên. Đã render thật (portrait) + build thật (landscape), cùng 1 đường code
+- ✅ **Kiểu 1–3 từ nhảy: chỉ cho video dọc dưới 2 phút**, hệ thống tự nhận — đã render thật (video 13s dọc → tự chọn `word_pop`)
+- ✅ Mỗi dòng caption tối đa 2 dòng chữ, không quá **42 ký tự/dòng** ở video ngang — **bắt và sửa 1 bug thật ở đúng chỗ này**: `position:absolute; left:50%; transform:translateX(-50%)` khiến CSS tính "available width" chỉ bằng NỬA khung hình, kẹp `max-width` vô nghĩa — câu sát trần ký tự bị đẩy tràn 3–4 dòng. Sửa bằng `left:0; right:0; margin:auto`, có test E2E khoá lại hành vi (`tests/test_e2e_caption_layout.py`)
+- ✅ Không ngắt dòng giữa một cụm từ có nghĩa — chỉ ngắt ở ranh giới từ, ưu tiên cuối câu/khoảng lặng
+- ✅ Từ khoá nhấn mạnh bằng màu/đậm, **tối đa 3 từ khoá trong 1 dòng** — đã render thật qua `tools.claude_write --kind caption`: từ "chiều" lên màu cam đậm đúng cấu hình, dấu vẫn nguyên vẹn
+- ✅ **Caption đứng yên suốt video** — vị trí cố định bằng CSS (`bottom`), không phụ thuộc lớp nào khác; cách mép đáy tối thiểu **8% chiều cao khung** (`bottom_margin_percent` trong config)
+- ⚠️ **0 mục đồ hoạ hoặc cutaway lấn vào vùng caption** — `checks/check_layout.py` chạy thật, logic đúng (so `rect` với `forbidden_zone`), nhưng **overlay_plan.json ([MGX-01]) và cutaway_plan.json ([JMP-01]) chưa ghi toạ độ pixel** (`rect`) nên hiện tại luôn "0 mục lấn" vì không có gì để kiểm — chưa chứng minh được trên dữ liệu thật, chỉ khi nào MGX-01 ghi `rect` mới kiểm được thật
+- ✅ Xuất kèm `.srt` khớp timeline sau cắt — file thật đã sinh (`out/final.srt`), đúng định dạng, timestamp khớp timeline sau cắt
+- ⚠️ Sửa file cấu hình style → chạy lại thấy đổi — ĐÚNG (style đọc lại từ `config/caption_style.json` mỗi lần chạy, không cache), nhưng **"không phải dựng lại từ đầu" chưa đạt** — [RND-01] vẫn ở bản render 1-khối toàn bộ, chưa chia khối tăng dần (TDD §6.2), nên sửa style hiện đồng nghĩa render lại TOÀN BỘ video (nhanh vì video mẫu ngắn, nhưng sai kiến trúc)
 - ❌ Chưa cần dịch caption sang ngôn ngữ khác
 - ❌ Chưa cần nhiều style caption khác nhau trong cùng một video
 - ❌ Chưa cần hiệu ứng chữ nâng cao (chữ 3D, chữ bay, chữ gõ máy)
+
+**Ghi chú Partial (18/08/2026):** 10/12 dòng "Done khi" đạt đủ (2 dòng ⚠️ nêu rõ ở trên) — cả hai đều chờ story khác ([MGX-01] ghi toạ độ `rect`, [RND-01] chia khối tăng dần), tự thân [CAP-01] không giữ lại được.
+
+Khác với [JMP-01] (dừng ở lớp dữ liệu), lần này **caption đã ghép thật vào file HyperFrames và render ra MP4 thật** — `lib/renderer.py` có thêm `build_caption_track()` (ghi thẳng vào timeline chính, không qua sub-composition, để `checks/check_caption_timing.py` mở file trực tiếp bằng Playwright và seek được), `steps/07_render.py` gọi nó ngay sau lớp video. Đã render thật nhiều lần trên `IMG_4588.MOV` (13.3s, dọc) trong lúc soi và sửa lỗi:
+
+- **Bug thật #1 — font không dùng được offline:** `config/caption_style.json` khai `"Be Vietnam Pro"` (font Việt hoá tốt nhất theo TDD), nhưng `npx hyperframes check` từ chối render vì font này không nằm trong 18 font HyperFrames nhúng sẵn (không gọi mạng) — chỉ tự fetch được nếu có Internet, môi trường này không đảm bảo có. Thêm `lib/renderer.resolve_embeddable_font()`: dò xem family/fallback nào nhúng sẵn được, không có thì lùi về `Inter` (đã kiểm chứng dấu tiếng Việt qua `check_vietnamese_glyphs.py`) và **log rõ tên font thiếu** — đúng edge case PRD, không dựng bản vỡ dấu âm thầm. **Cần anh xác nhận:** giữ `Inter` làm dự phòng cuối, hay có sẵn file `.woff2` của Be Vietnam Pro để nhúng thật?
+- **Bug thật #2 — tràn dòng do CSS, không phải do thuật toán gom chữ:** `position:absolute; left:50%; transform:translateX(-50%)` (cách canh giữa "hiển nhiên") khiến CSS tính bề rộng khả dụng chỉ bằng NỬA khung hình — `max-width` đặt bao nhiêu cũng vô nghĩa nếu lớn hơn nửa khung đó. Một câu đúng sát trần ký tự cấu hình (không vượt) vẫn bị đẩy tràn 3–4 dòng. Chỉ bắt được bằng cách đo `getBoundingClientRect()` thật qua Playwright — không unit test thuần nào thấy. Sửa bằng `left:0; right:0; margin:auto`, khoá lại bằng `tests/test_e2e_caption_layout.py` (dựng đúng câu sát trần qua `lib.caption_group` thật, đo layout thật, không mock).
+
+Đã thật sự làm xong và kiểm bằng dữ liệu thật (không giả lập):
+- `lib/caption_group.py` gom dòng theo câu/khoảng lặng, không ngắt giữa từ, tự chọn `karaoke_word`/`word_pop` theo hướng khung + độ dài
+- `steps/04_build_caption.py` chạy thật trên transcript thật → 15 dòng `word_pop` (video 13.3s, dọc), xuất `out/final.srt` đúng định dạng
+- `tools.claude_write --kind caption` gán `emphasis_word_ids` thật, render lại thấy từ "chiều" lên màu cam đúng cấu hình
+- `checks/check_caption_timing.py` (20/20, Playwright thật) và `checks/check_vietnamese_glyphs.py` (8/8, đo canvas thật) — cả hai chạy thật trên video render thật
+- 46 test mới (unit + 2 E2E Playwright thật), tổng 185 test xanh, không phá test cũ nào
+
+**Phát hiện thêm ngoài lề:** sửa 1 lỗi thật trong `tools/claude_write.py` — code cũ (từ phiên [JMP-01]) hardcode tên trường `"items"` cho mọi loại plan, nhưng `caption_plan.json` dùng tên trường `"lines"` (TDD §3.5) — nếu không sửa, claude_write sẽ ghi sai trường và mất toàn bộ dòng caption khi Claude gán emphasis.
 
 **Edge cases:**
 | Tình huống | Xử lý |

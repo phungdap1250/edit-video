@@ -47,6 +47,7 @@ def isolated_project(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, "PLANS", tmp_path / "plans")
     monkeypatch.setattr(paths, "TRANSCRIPT", tmp_path / "plans" / "transcript.json")
     monkeypatch.setattr(paths, "CUT_PLAN", tmp_path / "plans" / "cut_plan.json")
+    monkeypatch.setattr(paths, "CAPTION_PLAN", tmp_path / "plans" / "caption_plan.json")
     monkeypatch.setattr(paths, "RENDER_MANIFEST", tmp_path / "plans" / "render_manifest.json")
     monkeypatch.setattr(paths, "SOURCE", tmp_path / "source")
     monkeypatch.setattr(paths, "HF", tmp_path / "hf")

@@ -3,7 +3,7 @@
   "mode_auto": { "word_pop_if_vertical_and_under_sec": 120 },
   "font": {
     "family": "Be Vietnam Pro",
-    "fallbacks": ["Noto Sans", "Arial Unicode MS"],
+    "fallbacks": ["Noto Sans", "Inter"],
     "weight_normal": 500,
     "weight_emphasis": 700
   },

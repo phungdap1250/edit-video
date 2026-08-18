@@ -62,6 +62,7 @@ def main(args) -> dict:
     renderer.build_video_track(
         paths.HF, asset_rel, segments, canvas_width, canvas_height, cfg.render.fps
     )
+    _build_captions(canvas_width, canvas_height)
     renderer.check(paths.HF)
 
     out = paths.OUT / ("final.mp4" if args.final else "draft.mp4")
@@ -82,6 +83,16 @@ def _check_disk_space(cfg) -> None:
             f"Ổ đĩa chỉ còn {free_gb:.1f}GB trống, cần ít nhất {need_gb}GB để render an toàn",
             suggestion="Dọn bớt dung lượng rồi chạy lại — chưa có gì bị ghi ra khi lỗi này hiện",
         )
+
+
+def _build_captions(canvas_width: int, canvas_height: int) -> None:
+    """Lớp 4 — chưa có caption_plan.json (CAP-01 chưa chạy) thì bỏ qua, video vẫn dựng được."""
+    if not paths.CAPTION_PLAN.exists():
+        log.info("chưa có caption_plan.json — bỏ qua lớp caption")
+        return
+    caption_plan, _ = plan_io.load_plan(paths.CAPTION_PLAN)
+    style = config.caption_style()
+    renderer.build_caption_track(paths.HF, caption_plan, style, canvas_width, canvas_height)
 
 
 def _link_source_asset(project_dir: Path, source: Path) -> str:

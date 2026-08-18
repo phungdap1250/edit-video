@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
+from html import escape as escape_html
 from pathlib import Path
 
 from lib import log
@@ -27,6 +29,14 @@ from lib.errors import AIEditorError
 
 # Tăng tay khi đổi logic dựng — vào block_hash, làm mọi khối render lại (§6.3).
 RENDERER_VERSION = 2
+
+# Điểm chèn clip tiếp theo trong index.html — build_video_track để lại, các
+# lớp sau (caption/overlay/cutaway) chèn thêm vào đây, KHÔNG xoá marker đi.
+CLIPS_MARKER = (
+    "      <!-- Điểm chèn clip tiếp theo — không xoá, các lớp sau cần nó -->"
+)
+
+CAPTION_TRACK_INDEX = 20
 
 # init/check/render tự kiểm tra AI skill trên GitHub trừ khi tắt — chạy tự
 # động (không phải phiên tương tác) nên tắt để không phụ thuộc mạng.
@@ -167,7 +177,7 @@ def build_video_track(
         )
         cursor = round(cursor + duration, 3)
 
-    clips_html = "\n".join(video_tags) + "\n" + "\n".join(audio_tags)
+    clips_html = "\n".join(video_tags) + "\n" + "\n".join(audio_tags) + "\n" + CLIPS_MARKER
     marker = (
         "      <!--\n"
         "        Add your clips here. Example:\n"
@@ -210,9 +220,168 @@ def build_video_track(
     return cursor
 
 
-def add_caption_layer(scene_id: str, caption_items: list[dict], style: dict) -> None:
-    """Lớp 4 — caption karaoke. Việc của [CAP-01], chưa implement ở [RND-01]."""
-    raise NotImplementedError("[CAP-01] — xem docs/TDD.md §5.3")
+def build_caption_track(project_dir: Path, caption_plan: dict, style, canvas_width: int, canvas_height: int) -> int:
+    """Lớp 4 — caption karaoke, viết THẲNG vào timeline chính (không phải sub-comp).
+
+    Lý do không dùng sub-composition (data-composition-src): việc mount sub-comp
+    do CHÍNH CLI HyperFrames xử lý lúc render/preview, không chạy khi mở
+    index.html thẳng trong trình duyệt — mà `checks/check_caption_timing.py`
+    (Playwright) cần mở thẳng file để seek + đọc DOM. Viết trực tiếp vào
+    timeline chính (`window.__timelines[<id>]`) tránh phụ thuộc đó hoàn toàn.
+
+    Mỗi dòng caption là 1 `class="clip"` (data-start/data-duration tự động
+    ẩn/hiện — KHÔNG tween opacity trên chính clip, luật cứng §6.1/determinism).
+    Trong dòng, mỗi từ là 1 `<span>` màu mờ tĩnh; timeline CHÍNH chỉ thêm
+    `tl.set(...)` đổi màu từng từ đúng lúc — karaoke highlight.
+
+    TDD: §5.3, §6.1 · Trả tổng số dòng đã ghi.
+    """
+    index_html = project_dir / "index.html"
+    html = index_html.read_text(encoding="utf-8")
+
+    match = re.search(r'data-composition-id="([^"]+)"', html)
+    if not match:
+        raise AIEditorError("Không tìm thấy data-composition-id trong index.html")
+    comp_id = match.group(1)
+
+    if CLIPS_MARKER not in html:
+        raise AIEditorError(
+            "Không tìm thấy điểm chèn clip trong index.html",
+            suggestion="Chạy lại build_video_track trước build_caption_track",
+        )
+    timeline_marker = f'window.__timelines["{comp_id}"] = tl;'
+    if timeline_marker not in html:
+        raise AIEditorError("Không tìm thấy dòng đăng ký timeline trong index.html")
+
+    lines = caption_plan.get("lines", [])
+    lines_html = "\n".join(_caption_line_html(line, style) for line in lines)
+    set_calls = "\n".join(
+        call for line in lines for call in _caption_word_set_calls(line, style)
+    )
+    orientation = "portrait" if canvas_height > canvas_width else "landscape"
+    css = _caption_css(style, orientation, canvas_width, canvas_height)
+
+    html = html.replace(CLIPS_MARKER, lines_html + "\n" + CLIPS_MARKER)
+    html = html.replace("    </style>", css + "\n    </style>")
+    html = html.replace(timeline_marker, set_calls + "\n      " + timeline_marker)
+
+    index_html.write_text(html, encoding="utf-8")
+    log.info(f"đã ghi {len(lines)} dòng caption vào lớp 4 (mode={caption_plan.get('mode')})")
+    return len(lines)
+
+
+def _caption_line_html(line: dict, style) -> str:
+    words_html = "".join(
+        f'<span id="{line["id"]}_w{i}" class="cap-word'
+        + (' cap-word--emphasis"' if word_id in line.get("emphasis_word_ids", []) else '"')
+        + f'>{escape_html(text)} </span>'
+        for i, (word_id, text) in enumerate(zip(line["word_ids"], line["text"].split(" ")))
+    )
+    duration = round(line["t_end"] - line["t_start"], 3)
+    return (
+        f'      <div id="{line["id"]}" class="clip cap-line" '
+        f'data-start="{line["t_start"]}" data-duration="{duration}" '
+        f'data-track-index="{CAPTION_TRACK_INDEX}">{words_html}</div>'
+    )
+
+
+def _caption_word_set_calls(line: dict, style) -> list[str]:
+    emphasis = set(line.get("emphasis_word_ids", []))
+    calls = []
+    words = line["text"].split(" ")
+    starts = _word_starts_within_line(line)
+    for i, word_id in enumerate(line["word_ids"]):
+        if i >= len(words) or i >= len(starts):
+            continue
+        color = style.color.emphasis if word_id in emphasis else style.color.active
+        calls.append(f'      tl.set("#{line["id"]}_w{i}", {{ color: "{color}" }}, {starts[i]});')
+    return calls
+
+
+def _word_starts_within_line(line: dict) -> list[float]:
+    """`lib.caption_group.to_caption_lines` luôn ghi `word_starts` thật (mốc lời
+    nói thật của từng từ) — chia đều thời lượng dòng chỉ dùng khi thiếu trường
+    này (plan cũ/ghi tay), sai lệch lúc đó KHÔNG đạt trần 150ms của Done khi."""
+    if "word_starts" in line:
+        return line["word_starts"]
+    count = max(1, len(line["word_ids"]))
+    span = (line["t_end"] - line["t_start"]) / count
+    return [round(line["t_start"] + i * span, 3) for i in range(count)]
+
+
+def _caption_css(style, orientation: str, canvas_width: int, canvas_height: int) -> str:
+    font_size = style.size.portrait_px if orientation == "portrait" else style.size.landscape_px
+    max_chars = (
+        style.layout.max_chars_per_line_portrait
+        if orientation == "portrait"
+        else style.layout.max_chars_per_line_landscape
+    )
+    bottom_px = round(canvas_height * style.layout.bottom_margin_percent / 100)
+    font_family = resolve_embeddable_font(style)
+    return (
+        "      .cap-line {\n"
+        "        position: absolute;\n"
+        # `left:0; right:0; margin:auto` — KHÔNG dùng `left:50%; transform:
+        # translateX(-50%)`: với absolute + chỉ có `left`, CSS tính width theo
+        # "available width" = khoảng trống từ `left` tới rìa containing block,
+        # ở đây chỉ bằng 50% khung — `max-width` lớn hơn con số đó thì VÔ
+        # NGHĨA, bị kẹp ở nửa khung bất kể giá trị đặt (kiểm bằng Playwright
+        # thật: câu đúng sát trần ký tự bị đẩy tràn thành 4 dòng thay vì 2).
+        # Có cả `left` và `right` thì available width = TRỌN khung, `margin:
+        # auto` mới canh giữa đúng theo `width: fit-content` thật sự.
+        "        left: 0;\n"
+        "        right: 0;\n"
+        "        margin-left: auto;\n"
+        "        margin-right: auto;\n"
+        f"        bottom: {bottom_px}px;\n"
+        "        width: fit-content;\n"
+        f"        max-width: {max_chars}ch;\n"
+        "        text-align: center;\n"
+        f'        font-family: "{font_family}", sans-serif;\n'
+        f"        font-size: {font_size}px;\n"
+        f"        font-weight: {style.font.weight_normal};\n"
+        "        line-height: 1.3;\n"
+        "      }\n"
+        "      .cap-word {\n"
+        f"        color: {style.color.dim};\n"
+        "      }\n"
+        "      .cap-word--emphasis {\n"
+        f"        font-weight: {style.font.weight_emphasis};\n"
+        "      }"
+    )
+
+
+# 18 font HyperFrames nhúng sẵn (data URI, không gọi mạng) — xác minh thật
+# bằng `npx hyperframes check` (16/08/2026): "Be Vietnam Pro" cấu hình trong
+# caption_style.json KHÔNG nằm trong danh sách này → lint chặn render với lỗi
+# font_family_without_font_face. Đây là bảng cứng để nhận biết TRƯỚC khi build
+# thay vì dựng ra bản vỡ dấu rồi mới phát hiện qua check thất bại.
+_EMBEDDABLE_FONTS = frozenset({
+    "inter", "roboto", "open sans", "lato", "nunito", "montserrat", "poppins",
+    "outfit", "oswald", "league gothic", "archivo black", "playfair display",
+    "eb garamond", "space mono", "ibm plex mono", "jetbrains mono",
+    "source code pro", "noto sans jp",
+})
+_SAFE_FALLBACK_FONT = "Inter"  # cũng là font mặc định của khung 'blank' — đã kiểm chứng
+
+
+def resolve_embeddable_font(style) -> str:
+    """PRD [CAP] edge case: font thiếu → dùng font dự phòng đã kiểm chứng dấu
+    tiếng Việt, báo rõ tên font thiếu — KHÔNG âm thầm dựng bản vỡ dấu."""
+    candidates = [style.font.family, *style.font.fallbacks]
+    for family in candidates:
+        if family.strip().lower() in _EMBEDDABLE_FONTS:
+            if family != style.font.family:
+                log.warn(
+                    f"Font '{style.font.family}' không được HyperFrames nhúng sẵn "
+                    f"(offline, không gọi mạng) — dùng font dự phòng '{family}'"
+                )
+            return family
+    log.warn(
+        f"Không font nào trong {candidates} được HyperFrames nhúng sẵn "
+        f"(offline, không gọi mạng) — dùng font dự phòng {_SAFE_FALLBACK_FONT}"
+    )
+    return _SAFE_FALLBACK_FONT
 
 
 def add_overlay_layer(scene_id: str, html_path: Path, t_in: float, t_out: float) -> None:
@@ -244,12 +413,24 @@ def check(project_dir: Path) -> None:
         report = None
 
     if result.returncode != 0:
-        detail = report.get("summary") if report else result.stderr.strip()[-400:]
+        detail = _summarize_check_errors(report) if report else result.stderr.strip()[-400:]
         raise AIEditorError(
             f"HyperFrames check thất bại: {detail}",
             suggestion=f"Xem chi tiết: cd {project_dir} && npx hyperframes check",
         )
     log.info("HyperFrames check: 0 lỗi chặn")
+
+
+def _summarize_check_errors(report: dict) -> str:
+    """Gom mọi finding severity=error từ các mục con (lint/runtime/layout/motion/contrast)."""
+    messages = [
+        f"[{section}] {finding.get('code')}: {finding.get('message')}"
+        for section, part in report.items()
+        if isinstance(part, dict)
+        for finding in part.get("findings", [])
+        if finding.get("severity") == "error"
+    ]
+    return "; ".join(messages) or "không rõ (chạy 'npx hyperframes check' để xem chi tiết)"
 
 
 def render(project_dir: Path, out: Path, *, quality: str) -> Path:

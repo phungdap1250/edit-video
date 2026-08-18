@@ -20,17 +20,22 @@ from lib import budget, cli, config, paths, plan_io, validate_plan
 from lib.errors import AIEditorError
 from lib.timeline import BOF_ID, EOF_ID
 
+# Tên trường chứa danh sách mục — caption_plan.json dùng "lines", 3 loại còn
+# lại dùng "items" (TDD §3.4, §3.5).
+_LIST_FIELD = {"cut": "items", "overlay": "items", "cutaway": "items", "caption": "lines"}
+
 
 def main(args) -> dict:
     incoming = _load_items(Path(args.items))
     path = paths.PLAN_BY_KIND[args.kind]
+    list_field = _LIST_FIELD[args.kind]
 
     if path.exists():
         disk, version = plan_io.load_plan(path)
     else:
-        disk, version = {"items": []}, 0
+        disk, version = {list_field: []}, 0
 
-    items_by_id = {item["id"]: item for item in disk.get("items", []) if "id" in item}
+    items_by_id = {item["id"]: item for item in disk.get(list_field, []) if "id" in item}
     for item in incoming:
         items_by_id[item["id"]] = {**items_by_id.get(item["id"], {}), **item}
     merged_items = list(items_by_id.values())
@@ -41,8 +46,9 @@ def main(args) -> dict:
     if args.dry_run:
         return {"kind": args.kind, "items": len(incoming), "dry_run": True}
 
-    disk["items"] = merged_items
-    disk.setdefault("approved_at", None)
+    disk[list_field] = merged_items
+    if args.kind != "caption":  # caption_plan.json không có bước duyệt (TDD §5.3)
+        disk.setdefault("approved_at", None)
     new_version = _save(path, disk, version)
 
     return {
