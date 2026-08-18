@@ -19,6 +19,14 @@ body { margin: 0; font-family: "Be Vietnam Pro", system-ui, sans-serif; }
                     justify-content: center; background: #f5f5f5; color: #999; font-size: 11px; }
 .cutaway-meta { flex: 1; display: flex; flex-direction: column; }
 .overlay-item { display: flex; align-items: flex-start; gap: 8px; }
-.overlay-frame { width: 240px; height: 320px; border: 1px solid #e5e5e5; background: #000; }
+/* Canvas thật của scene (vd 2160×3840) lớn hơn nhiều khung xem trước — iframe
+   không tự scale nội dung bên trong, nên phải bọc trong khung cắt + scale
+   bằng JS (fitOverlayFrame trong review.js) chứ không chỉ đặt width/height
+   trên <iframe>, nếu không đồ hoạ (thường nằm lệch phải khung) sẽ không bao
+   giờ lọt vào vùng xem — phát hiện lúc test thủ công [MGX-01]. */
+.overlay-frame-wrap { width: 240px; height: 320px; overflow: hidden; position: relative;
+                       border: 1px solid #e5e5e5; background: #000; flex-shrink: 0; }
+.overlay-frame { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; }
 .overlay-meta { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .overlay-content-edit { width: 100%; min-height: 90px; font-family: monospace; font-size: 12px; }
+.playall-status { font-size: 12px; color: #666; margin-right: 8px; }

@@ -16,6 +16,10 @@ function reviewPage(kind) {
     message: "",
     loading: true,
     budget: null, // { api_calls_used, api_calls_limit, month_used, month_limit, est_cost_vnd } — chỉ /cutaway dùng
+    playingAll: false, // "phát toàn bộ liên tục" — chỉ /storyboard dùng
+    playAllIndex: -1,
+    _expectedClipId: null,
+    _onClipEndedBound: null,
 
     async init() {
       const plan = await this.api("GET", `/api/plan/${this.kind}`);
@@ -29,6 +33,71 @@ function reviewPage(kind) {
 
       this.loading = false;
       setInterval(() => this.saveDraft(), DRAFT_INTERVAL_MS);
+    },
+
+    /* Canvas thật của scene (`#root` data-width/height, vd 2160×3840) lớn hơn
+       nhiều khung xem 240×320 — scale bằng transform để đồ hoạ (thường nằm
+       lệch phải khung) không bị crop mất, bug phát hiện lúc test thủ công
+       [MGX-01]. Same-origin nên đọc thẳng contentWindow, không cần postMessage. */
+    fitOverlayFrame(event) {
+      const iframe = event.target;
+      const root = iframe.contentWindow?.document?.getElementById("root");
+      if (!root) return;
+      const boxWidth = iframe.parentElement.clientWidth;
+      const rootWidth = Number(root.dataset.width) || boxWidth;
+      const rootHeight = Number(root.dataset.height) || iframe.parentElement.clientHeight;
+      const scale = boxWidth / rootWidth;
+      iframe.style.width = `${rootWidth}px`;
+      iframe.style.height = `${rootHeight}px`;
+      iframe.style.transform = `scale(${scale})`;
+      iframe.parentElement.style.height = `${rootHeight * scale}px`;
+    },
+
+    /* "Phát toàn bộ liên tục" (PRD [MGX] Done khi, TDD §5.5) — mỗi thẻ là 1
+       composition độc lập tự phát (xem build_overlay_scene), nên phát nối
+       tiếp bằng cách gọi window.__aiEditorPlayClip() của từng iframe rồi chờ
+       nó tự báo hết clip qua postMessage — không dựng lại 1 timeline chung. */
+    playAll() {
+      if (this.playingAll) {
+        this.stopAll();
+        return;
+      }
+      this.playingAll = true;
+      this._onClipEndedBound = (e) => this._onClipEnded(e);
+      window.addEventListener("message", this._onClipEndedBound);
+      this._playAt(0);
+    },
+
+    stopAll() {
+      this.playingAll = false;
+      this.playAllIndex = -1;
+      if (this._onClipEndedBound) window.removeEventListener("message", this._onClipEndedBound);
+      document.querySelectorAll(".overlay-frame").forEach((frame) => {
+        frame.contentWindow?.document?.getElementById("preview-video")?.pause();
+      });
+    },
+
+    _playAt(index) {
+      if (!this.playingAll) return;
+      if (index >= this.items.length) {
+        this.stopAll();
+        return;
+      }
+      this.playAllIndex = index;
+      const frame = document.querySelectorAll(".overlay-frame")[index];
+      const playClip = frame?.contentWindow?.__aiEditorPlayClip;
+      if (typeof playClip !== "function") {
+        this._playAt(index + 1); // scene chưa nạp xong hoặc neo đã mất — bỏ qua, không kẹt luồng
+        return;
+      }
+      this._expectedClipId = this.items[index].id;
+      playClip();
+    },
+
+    _onClipEnded(event) {
+      if (event.data?.type !== "ai-editor-clip-ended") return;
+      if (!this.playingAll || event.data.id !== this._expectedClipId) return;
+      this._playAt(this.playAllIndex + 1);
     },
 
     async api(method, path, body) {

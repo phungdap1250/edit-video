@@ -513,6 +513,26 @@ def _declare_variables(html: str, variables: list[dict]) -> str:
     return re.sub(r"<html\b", f"<html data-composition-variables='{decl}'", html, count=1)
 
 
+def _sfx_call_lines(tween_lines: list[str]) -> list[str]:
+    """Trích mốc bắt đầu (tham số cuối) của từng `tl.fromTo(...)` — mỗi mốc là
+    1 lần đồ hoạ "vào" (card hiện, mục danh sách bung ra...) — sinh dòng
+    `tl.call(...)` phát SFX đúng mốc đó, không trùng lặp. PRD [MGX]: storyboard
+    preview cần "vào/ra có SFX", còn thiếu trước bản vá này."""
+    starts: list[float] = []
+    for line in tween_lines:
+        match = re.search(r",\s*([\d.]+)\s*\)\s*;\s*$", line)
+        if match:
+            starts.append(float(match.group(1)))
+    seen: set[float] = set()
+    calls = []
+    for t in starts:
+        if t in seen:
+            continue
+        seen.add(t)
+        calls.append(f"tl.call(__aiEditorPlaySfx, [], {t});")
+    return calls
+
+
 def build_overlay_scene(
     project_dir: Path, item: dict, frame, timeline_map: dict,
     canvas_width: int, canvas_height: int, video_rel_path: str = "../assets/source.mp4",
@@ -549,6 +569,7 @@ def build_overlay_scene(
         f"position:absolute;inset:0;width:{canvas_width}px;height:{canvas_height}px;object-fit:cover"
     )
     tween_block = "\n      ".join(frag["tween_lines"])
+    sfx_block = "\n      ".join(_sfx_call_lines(frag["tween_lines"]))
     scene_path.write_text(
         f"<!doctype html>\n<html lang=\"vi\">\n<head>\n<meta charset=\"UTF-8\">\n"
         f'<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>\n'
@@ -569,23 +590,65 @@ def build_overlay_scene(
         "    window.__timelines = window.__timelines || {};\n"
         "    const tl = gsap.timeline({ paused: true });\n"
         f"    {tween_block}\n"
+        f"    {sfx_block}\n"
         f'    window.__timelines["{item["id"]}"] = tl;\n\n'
+        "    // SFX xem trước — tổng hợp bằng Web Audio (không cần file âm thanh\n"
+        "    // rời), phát 1 tiếng \"pop\" ngắn đúng lúc đồ hoạ vào (PRD [MGX] Done khi).\n"
+        "    let __sfxCtx = null;\n"
+        "    function __aiEditorPlaySfx() {\n"
+        "      try {\n"
+        "        __sfxCtx = __sfxCtx || new (window.AudioContext || window.webkitAudioContext)();\n"
+        "        if (__sfxCtx.state === \"suspended\") __sfxCtx.resume();\n"
+        "        const t0 = __sfxCtx.currentTime;\n"
+        "        const osc = __sfxCtx.createOscillator();\n"
+        "        const gain = __sfxCtx.createGain();\n"
+        "        osc.type = \"sine\";\n"
+        "        osc.frequency.setValueAtTime(880, t0);\n"
+        "        osc.frequency.exponentialRampToValueAtTime(1320, t0 + 0.08);\n"
+        "        gain.gain.setValueAtTime(0.0001, t0);\n"
+        "        gain.gain.exponentialRampToValueAtTime(0.22, t0 + 0.01);\n"
+        "        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.18);\n"
+        "        osc.connect(gain).connect(__sfxCtx.destination);\n"
+        "        osc.start(t0);\n"
+        "        osc.stop(t0 + 0.2);\n"
+        "      } catch (e) { /* AudioContext không khả dụng — bỏ qua, không chặn phát video */ }\n"
+        "    }\n\n"
         "    // Runtime xem trước — KHÔNG thuộc composition, chỉ để mở file trực\n"
         "    // tiếp bằng trình duyệt cũng phát được (xem docstring hàm sinh ra file này).\n"
         "    (function () {\n"
         f"      const mediaStart = {t_start};\n"
         f"      const clipDuration = {duration};\n"
+        f'      const sceneId = "{item["id"]}";\n'
         "      const video = document.getElementById(\"preview-video\");\n"
+        "      let endedSignaled = false;\n"
         "      const seekToStart = () => { video.currentTime = mediaStart; };\n"
         "      video.addEventListener(\"loadedmetadata\", seekToStart);\n"
-        "      video.addEventListener(\"timeupdate\", () => {\n"
+        "      const syncTimeline = () => {\n"
         "        const local = video.currentTime - mediaStart;\n"
-        "        if (local >= clipDuration) { video.pause(); seekToStart(); return; }\n"
+        "        if (local >= clipDuration) {\n"
+        "          if (!endedSignaled && window.parent !== window) {\n"
+        "            endedSignaled = true;\n"
+        "            window.parent.postMessage({ type: \"ai-editor-clip-ended\", id: sceneId }, \"*\");\n"
+        "          }\n"
+        "          video.pause();\n"
+        "          seekToStart();\n"
+        "          return;\n"
+        "        }\n"
         "        tl.seek(Math.max(0, local));\n"
-        "      });\n"
+        "      };\n"
+        "      // \"timeupdate\" bắn liên tục lúc phát/kéo thanh tua thật, nhưng KHÔNG\n"
+        "      // đảm bảo bắn khi set currentTime bằng JS lúc video đang pause (đo được\n"
+        "      // lúc điều tra check_storyboard_fidelity lệch nặng) — thêm \"seeked\" để\n"
+        "      // timeline luôn đồng bộ dù đứng yên hay đang chạy.\n"
+        "      video.addEventListener(\"timeupdate\", syncTimeline);\n"
+        "      video.addEventListener(\"seeked\", syncTimeline);\n"
         "      video.addEventListener(\"play\", () => {\n"
+        "        endedSignaled = false;\n"
         "        if (video.currentTime < mediaStart || video.currentTime > mediaStart + clipDuration) seekToStart();\n"
         "      });\n"
+        "      // Cho trang cha (/storyboard) điều khiển \"phát toàn bộ liên tục\" — cùng\n"
+        "      // gốc (same-origin) nên truy cập contentWindow trực tiếp, không cần API riêng.\n"
+        "      window.__aiEditorPlayClip = () => { seekToStart(); return video.play(); };\n"
         "    })();\n"
         "  </script>\n</body>\n</html>\n",
         encoding="utf-8",

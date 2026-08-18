@@ -329,7 +329,7 @@ Khác với [JMP-01] (dừng ở lớp dữ liệu), lần này **caption đã g
 
 #### [MGX] Feature 5: Motion graphics theo lời nói (HyperFrames)
 
-**Status:** ⚠️ Partial — cả 4 loại đồ hoạ dựng thật, ghép thật vào video render, Variables sync hoạt động thật (sửa chữ không cần dựng lại DOM); 3/15 dòng "Done khi" còn thiếu (SFX, nút phát liên tục, check_storyboard_fidelity chưa đạt). Xem ghi chú dưới bảng Done khi.
+**Status:** ⚠️ Partial — cả 4 loại đồ hoạ dựng thật, ghép thật vào video render, Variables sync hoạt động thật (sửa chữ không cần dựng lại DOM), SFX + nút phát liên tục đã làm thật; 1/15 dòng "Done khi" còn thiếu (check_storyboard_fidelity giảm lệch 99%→26-39% sau khi sửa 2 bug thật nhưng chưa đạt trần 2%, nghi phần còn lại do pipeline render riêng của HyperFrames CLI). Xem ghi chú dưới bảng Done khi.
 
 **Story:** [MGX-01] Là người tự dựng video, tôi muốn hệ thống tự dựng đồ hoạ động bám đúng nội dung tôi đang nói, để người xem nhìn thấy được thứ tôi đang giải thích chứ không chỉ nghe.
 
@@ -359,11 +359,11 @@ Khác với [JMP-01] (dừng ở lớp dữ liệu), lần này **caption đã g
 - ✅ **Đạt 100% mục "Luật kiểm được" của `frame.md`** — `check_frame_rules.py` quét thật `hf/scenes/*.html` đã dựng, chạy thật: **6/6 luật đạt**
 - ✅ Đồ hoạ xuất hiện trong khoảng **±300ms** so với câu thoại kích hoạt — `t_start` lấy thẳng từ timeline sau cắt (sai lệch 0, không phải đo gần đúng)
 - ✅ **Không đồ hoạ nào vào video khi chưa duyệt qua storyboard** — `build_overlay_track` chỉ ghép mục `status=approved`, đã render thật kiểm bằng mắt
-- ⚠️ **Storyboard là bản động, phát được: chuyển động, vào/ra có thật (GSAP đồng bộ theo `video.currentTime` đang phát)** — **SFX (hiệu ứng âm thanh) và "chuyển cảnh" chưa làm** (mỗi scene chỉ 1 đồ hoạ, không có nhiều cảnh để chuyển)
+- ✅ **Storyboard là bản động, phát được: chuyển động, vào/ra có thật (GSAP đồng bộ theo `video.currentTime` đang phát), có SFX** — SFX tổng hợp bằng Web Audio (`__aiEditorPlaySfx`, tiếng "pop" ngắn) phát đúng mốc mỗi lần đồ hoạ vào, trích từ mốc bắt đầu thật của từng `tl.fromTo(...)`. "Chuyển cảnh" vẫn chưa cần — mỗi scene chỉ 1 đồ hoạ, không có nhiều cảnh để chuyển
 - ✅ **Có tiếng** — `<video controls>` phát audio gốc built-in thật, đã nghe kiểm qua Playwright
-- ❌ **Chưa có nút "phát toàn bộ storyboard liên tục"** — mỗi thẻ có video/controls riêng, chưa nối thành 1 luồng phát tuần tự
+- ✅ **Nút "phát toàn bộ storyboard liên tục"** — mỗi scene tự expose `window.__aiEditorPlayClip()` + báo hết clip qua `postMessage`, trang `/storyboard` phát tuần tự từng thẻ dựa vào tín hiệu đó (không dựng lại 1 timeline chung); đã test thật qua browser: phát đúng thứ tự 2 mục rồi tự dừng
 - ✅ Tua được — `<video controls>` native, đã kiểm scrubber thật
-- ⚠️ **Storyboard phát ra đúng thứ sẽ có trong video cuối** — `check_storyboard_fidelity.py` viết xong, chạy thật, **nhưng kết quả hiện tại lệch nặng (39–93%, trần 2%)** — nghi do proxy H.264 (dùng cho preview trình duyệt) và HEVC gốc (dùng cho render CLI) áp animation timing hơi lệch nhau tại đúng mốc lấy mẫu; chưa kịp điều tra hết trong phiên này — xem ghi chú Partial
+- ⚠️ **Storyboard phát ra đúng thứ sẽ có trong video cuối** — `check_storyboard_fidelity.py` chạy thật, sửa được 2 bug thật khiến lệch giả tạo: (1) script kiểm cũ set `currentTime += 0.6` ngay sau `goto()` trong khi scene tự seek `mediaStart` bất đồng bộ trên `loadedmetadata` — cộng dồn vào currentTime=0 ra khung hình sai hoàn toàn; (2) đợi `readyState >= 2` là chưa đủ, phải đợi `readyState === 4` cả trước lẫn sau khi set — nếu không GSAP timeline đứng ở progress=0 dù currentTime đã đúng (đo trực tiếp bắt được). Sau khi sửa: lệch giảm từ 39–93% xuống còn 26–39%, trần vẫn 2%. Phần còn lại: `out/draft.mp4` (1080×1920, theo đúng "Done khi" [RND-01]) do HyperFrames CLI tự render, khác canvas gốc 2160×3840 dùng để chụp storyboard — nghi HyperFrames CLI tự crop/scale video nguồn (`source.mp4`, 3840×2160 + `rotation=-90`) hơi khác cách trình duyệt làm, gây lệch khung vài % còn lại — không điều tra sâu thêm vì đây là hành vi nội bộ của HyperFrames CLI (không được đụng vào ngoài `lib/renderer.py`)
 - ✅ Chạy qua server duyệt cục bộ (`python review.py storyboard`), tải theo HTTP range (`send_file(conditional=True)`)
 - ✅ **Sửa chữ trên storyboard → đồ hoạ dựng ra đúng chữ đã sửa, không mất khi chạy lại pipeline** — đã kiểm thật: sửa qua `tools.claude_write`, `tools.sync_variables`, render lại **chỉ bằng `renderer.render()` — không dựng lại DOM** — chữ mới lên đúng
 - ✅ **Không quá 1 đồ hoạ hiển thị cùng lúc**; cách nhau ≥500ms — `validate_plan` từ chối ghi khi vi phạm, đã bắt lỗi thật lúc soạn dữ liệu test (321ms bị từ chối)
@@ -373,9 +373,11 @@ Khác với [JMP-01] (dừng ở lớp dữ liệu), lần này **caption đã g
 - ❌ Chưa cần Trích dẫn, Intro/Outro, Thanh chương mục
 - ❌ Chưa cần người dùng tự tạo loại đồ hoạ mới bằng giao diện
 
-**Ghi chú Partial (18/08/2026):** 12/15 dòng đạt đủ, render THẬT (khác [JMP-01] dừng ở dữ liệu) — video mẫu có cả 3 lớp caption + overlay + zoom cùng lúc, xem ảnh chụp khung trong phiên làm việc.
+**Ghi chú Partial (18/08/2026):** 14/15 dòng đạt đủ, render THẬT (khác [JMP-01] dừng ở dữ liệu) — video mẫu có cả 3 lớp caption + overlay + zoom cùng lúc, xem ảnh chụp khung trong phiên làm việc.
 
 Bug thật bắt được và sửa trong lúc dựng: (1) `font-family:"X"` lồng trong `style="..."` (cả hai đều nháy kép) đóng attribute sớm, phá vỡ CSS phía sau — sửa dùng nháy đơn cho font-family; (2) `overlay_timing()` không kẹp `t_end` theo tổng thời lượng video, đồ hoạ neo gần cuối video ngắn tạo `data-duration` dài hơn cả composition; (3) `tools/claude_write.py` (viết từ phiên [JMP-01]) chưa từng tôn trọng `edited_fields[]` lúc merge — sửa thật (`lib/field_path.py` + `_merge_item()`), không chỉ kiểm tra suông; (4) `review.py`'s `PLAN_KIND` (map "storyboard"→"overlay") được khai báo nhưng chưa từng dùng — mọi route `/api/plan|draft/storyboard` đều 404/lỗi, chặn đứng trang `/storyboard`; (5) video nguồn là HEVC, Chromium không tự giải mã được khi mở file preview trực tiếp (khung hình đứng đen dù đang "phát") — tự dựng bản proxy H.264 một lần, cache lại, giống cách HyperFrames CLI tự làm cho `preview`.
+
+**Ghi chú vá Partial (18/08/2026, phiên 2):** phát hiện thêm 1 bug lúc test thủ công qua browser — thẻ preview `/storyboard` là `<iframe>` cỡ 240×320px nhưng canvas scene cố định 2160×3840, không có CSS scale-to-fit nào → iframe chỉ hiện góc trên-trái, đồ hoạ (luôn nằm bên phải khung) **không bao giờ lọt vào vùng xem được** dù dữ liệu/animation phía sau đúng. Sửa bằng `fitOverlayFrame()` (`web/static/review.js`): đọc `data-width`/`data-height` thật của `#root` sau khi iframe load, `transform: scale()` theo đúng tỉ lệ. Đã thêm SFX (Web Audio, không cần file âm thanh rời), nút phát liên tục (`window.__aiEditorPlayClip()` + `postMessage`), và sửa 2 bug trong `check_storyboard_fidelity.py` (xem dòng "Done khi" tương ứng) — tất cả đã kiểm thật qua browser + Playwright, không phải giả định.
 
 Còn thiếu, trung thực chưa làm được: SFX cho storyboard, nút phát liên tục toàn bộ storyboard, và `check_storyboard_fidelity.py` — script chạy được nhưng kết quả lệch nặng (39–93%, trần 2%), chưa kịp xác định nguyên nhân chính xác (nghi ngờ hàng đầu: proxy H.264 dùng cho preview và HEVC gốc dùng cho render CLI decode khác pha tại đúng mốc lấy mẫu `t_start + 0.6s`).
 

@@ -22,6 +22,8 @@
   <header class="bar">
     <h1>Duyệt đồ hoạ</h1>
     <div class="actions">
+      <span class="playall-status" x-show="playingAll" x-text="`Đang phát ${playAllIndex + 1}/${items.length}`"></span>
+      <button @click="playAll()" x-text="playingAll ? 'Dừng' : 'Phát toàn bộ liên tục'"></button>
       <span x-text="message"></span>
       <button @click="publish()">Xuất quyết định</button>
     </div>
@@ -42,11 +44,14 @@
   <main x-show="!loading">
     <template x-for="item in items" :key="item.id">
       <article class="item overlay-item" :class="item.status">
-        <iframe
-          :src="media('hf/scenes/' + item.id + '.html')"
-          class="overlay-frame"
-          loading="lazy"
-        ></iframe>
+        <div class="overlay-frame-wrap">
+          <iframe
+            :src="media('hf/scenes/' + item.id + '.html')"
+            class="overlay-frame"
+            loading="lazy"
+            @load="fitOverlayFrame($event)"
+          ></iframe>
+        </div>
         <div class="overlay-meta">
           <span class="anchor-text" x-text="item.anchor_text"></span>
           <span class="reason" x-text="item.type"></span>

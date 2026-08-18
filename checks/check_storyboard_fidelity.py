@@ -62,7 +62,7 @@ def main() -> int:
 
                 scene_html = paths.HF_SCENES / f"{item['id']}.html"
                 storyboard_frame = tmp_path / f"{item['id']}_storyboard.png"
-                _screenshot_scene(browser, scene_html, storyboard_frame)
+                _screenshot_scene(browser, scene_html, storyboard_frame, t_start + 0.6)
 
                 diff_ratio = _rect_diff_ratio(final_frame, storyboard_frame, item["rect"], cv2, np)
                 if diff_ratio >= DIFF_THRESHOLD:
@@ -110,14 +110,35 @@ def _scene_canvas_size(scene_html: Path) -> tuple[int, int]:
     return (int(w.group(1)) if w else 1080, int(h.group(1)) if h else 1920)
 
 
-def _screenshot_scene(browser, scene_html: Path, out: Path) -> None:
+def _screenshot_scene(browser, scene_html: Path, out: Path, at_sec: float) -> None:
     # Viewport mặc định Playwright (1280×720) << canvas thật (vd 2160×3840) —
     # trang chỉ hiện được góc trên-trái composition, ảnh chụp SAI HOÀN TOÀN bố
     # cục dù không lỗi cú pháp gì (chỉ lộ ra khi so ảnh, không phải lint/log).
     width, height = _scene_canvas_size(scene_html)
     page = browser.new_page(viewport={"width": width, "height": height})
     page.goto(scene_html.resolve().as_uri(), timeout=15000)
-    page.evaluate("() => { document.getElementById('preview-video').currentTime += 0.6; }")
+    # 2 bug đã sửa (điều tra lúc lệch 39–99%, trần 2%):
+    # (1) trước đây dùng `currentTime += 0.6` ngay sau goto(), nhưng scene tự
+    #     seek video về mediaStart trên "loadedmetadata" (async) — evaluate()
+    #     chạy trước khi seek đó xong thì += 0.6 cộng vào currentTime còn là 0,
+    #     ra khung hình hoàn toàn sai. Sửa: set currentTime TUYỆT ĐỐI = at_sec.
+    # (2) readyState >= 2 (HAVE_CURRENT_DATA) đạt được TRƯỚC KHI seek thật sự
+    #     xong — set currentTime lần 2 lúc đó làm ngắt seek đang chạy dở, và
+    #     sự kiện "seeked"/"timeupdate" của scene không kịp bắn nên GSAP
+    #     timeline đứng ở progress=0 (đo trực tiếp: opacity đồ hoạ vẫn 0 dù
+    #     currentTime đã đúng). Sửa: chờ readyState === 4 (HAVE_ENOUGH_DATA)
+    #     cả trước lẫn sau khi set currentTime.
+    page.wait_for_function(
+        "document.getElementById('preview-video').readyState === 4", timeout=15000
+    )
+    page.evaluate(
+        "(t) => { document.getElementById('preview-video').currentTime = t; }", at_sec
+    )
+    page.wait_for_function(
+        "(t) => Math.abs(document.getElementById('preview-video').currentTime - t) < 0.05"
+        " && document.getElementById('preview-video').readyState === 4",
+        arg=at_sec, timeout=15000,
+    )
     page.wait_for_timeout(400)
     page.screenshot(path=str(out))
     page.close()
