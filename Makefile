@@ -32,7 +32,7 @@ CHECKS_ARCH := check_block_hash check_renderer_isolation check_no_hardcode \
                check_no_silent_except check_no_bind_all check_no_secrets
 
 CHECKS_FAST := check_anchor_integrity check_frame_rules check_layout \
-               check_variables_sync
+               check_variables_sync check_layer_zoom
 
 CHECKS_RENDER := check_wer check_cut_coverage check_av_sync check_caption_timing \
                  check_vietnamese_glyphs check_storyboard_fidelity check_block_boundary

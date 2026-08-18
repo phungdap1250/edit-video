@@ -22,7 +22,7 @@ from pathlib import Path
 
 from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 
-from lib import paths, plan_io
+from lib import budget, config, paths, plan_io
 from lib.errors import AIEditorError, PlanConflict
 from lib.log import now_iso
 
@@ -117,7 +117,10 @@ def get_transcript():
 
 @app.get("/api/budget")
 def get_budget():
-    raise NotImplementedError("tools.budget — TDD §9.4, tuần 3")
+    cutaway_plan = {}
+    if paths.CUTAWAY_PLAN.exists():
+        cutaway_plan, _ = plan_io.load_plan(paths.CUTAWAY_PLAN)
+    return jsonify({"ok": True, **budget.snapshot(cutaway_plan, config.cut_config())})
 
 
 # ── Media: allowlist thư mục + HTTP Range ─────────────────────────

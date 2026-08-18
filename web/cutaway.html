@@ -12,14 +12,15 @@
   <script defer src="/static/alpine.min.js"></script>
 </head>
 <!--
-  KHUNG TRỐNG CÓ CHỦ Ý. Bố cục lấy từ ui-demo/ (xem CLAUDE.md) — chưa có bản
-  thiết kế thì không tự sáng tạo layout mới. Phần state đã nối sẵn qua review.js.
-  Yêu cầu chức năng: storyboard ảnh, Giữ/Bỏ/thay hình/sinh lại, bộ đếm ngân sách 'Đã dùng n/10 · ước tính …đ' (PRD [JMP])
+  KHUNG TRỐNG CÓ CHỦ Ý. Bố cục lấy từ ui-demo/ (xem CLAUDE.md) — ui-demo/ rỗng
+  nên đây là bản chức năng tối thiểu, đủ dữ liệu cho "Done khi" (PRD [JMP]),
+  chưa phải bố cục cuối cùng.
 -->
 <body x-data="reviewPage('cutaway')" x-cloak>
   <header class="bar">
     <h1>Duyệt cutaway</h1>
     <div class="actions">
+      <span class="budget" x-show="budget" x-text="budgetLabel()"></span>
       <span x-text="message"></span>
       <button @click="publish()">Xuất quyết định</button>
     </div>
@@ -39,11 +40,22 @@
 
   <main x-show="!loading">
     <template x-for="item in items" :key="item.id">
-      <article class="item" :class="item.status">
-        <!-- TODO(ui-demo): ảnh minh hoạ + prompt + nút sinh lại (regen_count/regen_limit) -->
-        <span x-text="item.id"></span>
-        <button @click="setStatus(item, 'accepted')">Giữ</button>
-        <button @click="setStatus(item, 'rejected')">Bỏ</button>
+      <article class="item cutaway-item" :class="item.status">
+        <template x-if="item.image_path">
+          <img :src="media(item.image_path)" :alt="item.anchor_text" class="cutaway-thumb">
+        </template>
+        <span x-show="!item.image_path" class="cutaway-missing">chưa có ảnh</span>
+        <div class="cutaway-meta">
+          <span class="anchor-text" x-text="item.anchor_text"></span>
+          <span class="reason" x-text="item.image_source || 'chưa xử lý'"></span>
+          <span class="tier" x-text="'sinh lại ' + (item.regen_count ?? 0) + '/' + (item.regen_limit ?? '?')"></span>
+        </div>
+        <button @click="setStatus(item, 'accepted')" :disabled="item.status === 'accepted'">Giữ</button>
+        <button @click="setStatus(item, 'rejected')" :disabled="item.status === 'rejected'">Bỏ</button>
+        <button
+          @click="regenerate(item)"
+          :disabled="(item.regen_count ?? 0) >= (item.regen_limit ?? 0)"
+        >Sinh lại</button>
       </article>
     </template>
   </main>

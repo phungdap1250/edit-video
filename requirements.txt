@@ -1,6 +1,6 @@
 flask>=3.0
 requests>=2.31
-opencv-python-headless>=4.9
+opencv-python-headless>=4.9,<5.0
 playwright>=1.40
 python-dotenv>=1.0
 pyyaml>=6.0

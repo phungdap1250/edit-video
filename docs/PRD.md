@@ -186,7 +186,7 @@ Trong lúc test bắt thêm 1 bug thật thứ hai: `<video>` sinh ra thiếu CS
 
 #### [JMP] Feature 3: Che jump cut — zoom tự động & cutaway có duyệt
 
-**Status:** ⏳ Todo
+**Status:** ⚠️ Partial — pipeline quyết định (zoom + cutaway + ngân sách + duyệt) chạy đúng trên video thật; còn thiếu bước ghép 2 lớp vào render thật, chờ cùng CAP-01/MGX-01. Xem ghi chú dưới bảng Done khi.
 
 **Story:** [JMP-01] Là người tự dựng video, tôi muốn hệ thống che các điểm cắt bằng zoom luân phiên và chèn hình minh hoạ đúng chỗ, để video không bị giật hình sau khi cắt và người xem có hình theo nội dung đang nói.
 
@@ -224,18 +224,32 @@ Trong lúc test bắt thêm 1 bug thật thứ hai: `<video>` sinh ra thiếu CS
 - Trang duyệt hiện bộ đếm ngay trên đầu: `Đã dùng 12/25 · ước tính 9.400đ`
 
 **Done khi:**
-- ✅ **Mọi điểm cắt đều được che** — `check_cut_coverage.py` đối chiếu từng mục `status: applied` trong `cut_plan.json` với đúng 1 mục che (zoom hoặc cutaway) trong cửa sổ ±100ms, in ra `42/42 điểm cắt đã che · 0 điểm trần`. Đạt = **100%**
-- ✅ Zoom luân phiên không lặp cùng mức ở 2 đoạn liền nhau; mức phóng trong khoảng **100–110%** **và không vượt mức zoom tối đa an toàn** tính từ khung mặt. Vượt → tự hạ xuống mức an toàn và báo
-- ✅ Zoom chỉ áp lên lớp 1 — caption và đồ hoạ **không đổi cỡ, không bị đẩy khỏi khung** khi zoom
-- ✅ `cutaway_plan.json` neo vào **ID từ**, ghi rõ **nguồn hình: có sẵn hay AI sinh** cho từng mục
-- ✅ Ảnh AI sinh lưu vào folder riêng, không lẫn với `assets/` của người dùng
-- ✅ **Không ảnh AI nào vào video khi chưa được duyệt** — mặc định là chưa duyệt
-- ✅ Cutaway không che mặt người nói quá **8 giây liên tục**
-- ✅ Không vượt **25 ảnh/video** và **3 lần sinh lại/mục** — chạm trần thì dừng, không âm thầm gọi tiếp API
-- ✅ Từ chối toàn bộ kế hoạch cutaway → video vẫn dựng bình thường, chỉ còn zoom
+- ✅ **Mọi điểm cắt đều được che** — `check_cut_coverage.py` đối chiếu từng "điểm cắt" (ranh giới giữa 2 đoạn giữ liền kề trên timeline sau cắt, v1.1 §5.4) với đúng 1 mục che (zoom hoặc cutaway) trong cửa sổ ±100ms, in ra `N/N điểm cắt đã che · 0 điểm trần`. Đã kiểm thật trên video 13s (`IMG_4588.MOV`): `6/6 · 0 điểm trần`
+- ✅ Zoom luân phiên không lặp cùng mức ở 2 đoạn liền nhau; mức phóng trong khoảng **100–110%** **và không vượt mức zoom tối đa an toàn** tính từ khung mặt (`lib/face.py`, OpenCV Haar cascade, dò thật trên video 13s: mặt tại (246,711,1587×1587) → `max_safe_zoom=1.1`). Không dò được mặt → tự hạ về trần an toàn cấu hình và báo rõ
+- ⚠️ **Dữ liệu zoom đúng lớp 1, nhưng CHƯA ghép vào video render thật** — `zoom_level` chỉ tồn tại trong `work/zoom_plan.json`, `checks/check_layer_zoom.py` xác nhận máy 0 lớp 2/3/4 bị rò rỉ trường này. `lib/renderer.py` chưa có hàm áp zoom vào `<video>` lớp 1 (RND-01 vẫn ở bản 1-khối, tự nhận đây là việc chờ CAP-01/MGX-01/JMP-01 xong cùng lúc — xem ghi chú dưới)
+- ✅ `cutaway_plan.json` neo vào **ID từ**, ghi rõ **nguồn hình: có sẵn hay AI sinh** cho từng mục — kiểm thật qua `tools.claude_write` + `steps/06_build_cutaway`
+- ✅ Ảnh AI sinh lưu vào `work/generated_images/`, ảnh khớp `assets/` (đã chuẩn hoá tỉ lệ) lưu `work/cutaway_normalized/` — tách biệt `assets/` người dùng
+- ⚠️ **Không ảnh AI nào vào video khi chưa được duyệt** — đúng ở mức dữ liệu (`status` mặc định `pending`), nhưng vì chưa có bước ghép cutaway vào render thật (lớp 2 chưa nối trong `lib/renderer.py`) nên tiêu chí này chưa kiểm được trên video xuất ra
+- ✅ Cutaway không che mặt người nói quá **8 giây liên tục** — `steps/06` chủ động bỏ qua (đánh dấu `rejected`, chỉ zoom) mọi đoạn > `cfg.cutaway.max_face_cover_sec`, có test; `lib/validate_plan.py` kiểm lại lần 2 khi ghi plan
+- ✅ Không vượt trần Gemini/video và trần/tháng — chạm trần thì dừng, không âm thầm gọi tiếp API (`lib/budget.py`, kiểm CẢ HAI trần TRƯỚC khi gọi). Số đọc từ `config/cut_config.json`, **không hardcode**: hiện là **10 ảnh/video · 120/tháng · 3 lần sinh lại/mục** theo bản sửa số học TDD §9.4 (v1.0 của mục này ghi 25/video — TDD đã chỉ ra 25×780đ×12 video vỡ ngân sách tháng ở video thứ 6, xem TDD §9.4 để đối chiếu)
+- ✅ Từ chối toàn bộ kế hoạch cutaway (không có `cutaway_plan.json`) → `steps/06` vẫn chạy xong phần zoom bình thường, `check_cut_coverage` vẫn báo 100% chỉ nhờ zoom
 - ❌ Chưa cần sinh video b-roll bằng AI (chỉ ảnh tĩnh)
 - ❌ Chưa cần **bám mặt liên tục** khi zoom — chỉ dò 1 lần lúc khởi tạo để lấy vùng an toàn, sau đó dùng khung cố định
 - ❌ Chưa cần thư viện stock ảnh bên ngoài
+
+**Ghi chú Partial (17/08/2026):** 7/9 dòng "Done khi" đạt đủ, 2 dòng đạt ở mức dữ liệu nhưng chưa kiểm được trên video xuất ra (nêu rõ ⚠️ ở trên) — cả hai đều quy về cùng 1 việc còn thiếu: **`lib/renderer.py` chưa ghép lớp 1 (zoom) và lớp 2 (cutaway) vào file HyperFrames thật**, mới chỉ dựng lớp 1 phẳng không zoom (di sản [RND-01] tuần 1). Việc này tự thân [JMP-01] không đủ để hoàn tất — `render_block()`/`add_cutaway_layer()` trong `lib/renderer.py` đã có sẵn placeholder `NotImplementedError` ghi rõ "[JMP-01]" nhưng bản thân RND-01 cũng đang chờ CAP-01 và MGX-01 xong layer của mình trước khi ghép **cả 4 lớp cùng lúc** vào một lần chia khối (TDD §6.2, §16 tuần 4) — ghép riêng lẻ từng lớp sẽ phải viết lại khi 2 lớp kia xong.
+
+Đã thật sự làm xong và kiểm bằng dữ liệu thật (`IMG_4588.MOV`, 13.3s, không phải giả lập):
+- Dò khung mặt OpenCV thật → `max_safe_zoom=1.1`, lịch zoom 7 đoạn luân phiên đúng luật
+- `tools.claude_write --kind cutaway` ghi + kiểm schema thật (validate_plan từ chối khi anchor sai)
+- `steps/06_build_cutaway` chạy thật: khớp ảnh có sẵn trong `assets/` (kèm chuẩn hoá tỉ lệ, không kéo méo), thiếu ảnh → kiểm ngân sách CẢ HAI trần rồi mới gọi Gemini, thiếu khoá API → đánh dấu `missing` không crash
+- `check_cut_coverage.py` (`6/6 · 0 điểm trần`) và `check_layer_zoom.py` (0 vi phạm) — cả hai chạy thật trên dữ liệu thật, không mock
+- Trang `/cutaway` có ảnh, bộ đếm ngân sách `n/limit`, nút "Sinh lại"
+- 43 test pytest mới (tổng 151 test xanh, gồm 2 E2E Playwright thật), không phá test cũ nào
+
+**Kiểm thủ công (18/08/2026):** mở `/cutaway` thật trong trình duyệt với dữ liệu thật (ảnh, ngân sách, 3 trạng thái nguồn ảnh), test Giữ/Bỏ/Sinh lại, responsive mobile (375px), disable đúng khi chạm trần `regen_limit`, publish → server tự tắt → file trên đĩa đúng. Bắt và sửa 1 lỗi thật: `<img :src>` vẫn được Alpine tính giá trị dù `x-show` đang ẩn, gây gọi `/media/null` (bị allowlist chặn đúng, không rò rỉ, nhưng ồn console) — đổi sang `<template x-if>` để phần tử không tồn tại trong DOM khi chưa có ảnh. Chạy lại `steps/06_build_cutaway` sau khi publish còn tự phát hiện đúng 1 ca thật: đoạn "làm gì? Đi chơi?" dài 1.3s (< `min_segment_sec` 1.5s cấu hình) bị tự động bỏ qua cutaway, chỉ còn zoom — đúng luật edge case PRD.
+
+**Sự khác biệt với PRD gốc cần anh xác nhận:** mục Hạn mức sinh ảnh ở trên ghi **25 ảnh/video · 3 lần sinh lại/mục**, nhưng TDD §9.4 (v1.1) đã sửa lại còn **10 ảnh/video · 120/tháng · 3 lần sinh lại/mục** vì số học 25/video × 12 video/tháng vỡ ngân sách 100.000đ ở video thứ 6. Code đã theo bản TDD (đọc từ `config/cut_config.json`, không hardcode) — nếu anh muốn giữ 25/video thì chỉ cần sửa `config/cut_config.json`, không cần sửa code.
 
 **Edge cases:**
 | Tình huống | Xử lý |

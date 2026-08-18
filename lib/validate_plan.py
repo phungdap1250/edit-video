@@ -37,9 +37,13 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         ],
     },
     "cutaway": {
-        "required": ["id", "anchor_start", "anchor_end", "image_source", "status"],
-        "enums": {"image_source": ["user_asset", "ai_generated", "missing"]},
+        # image_source KHÔNG bắt buộc lúc Claude ghi: Claude chỉ chọn đoạn + soạn
+        # prompt (TDD §7.1 việc #4) — image_source do steps/06 gán sau khi khớp
+        # assets/ hoặc gọi Gemini, Claude không biết trước giá trị này.
+        "required": ["id", "anchor_start", "anchor_end", "status"],
+        "enums": {"image_source": ["user_asset", "ai_generated", "missing", None]},
         "custom": [
+            "moi_anchor_phai_ton_tai_trong_transcript",
             "khong_vuot_tran_api_calls_video",
             "khong_vuot_tran_api_calls_thang",
             "khong_vuot_3_lan_sinh_lai",
@@ -93,6 +97,60 @@ def validate(kind: str, items: list[dict], ctx: dict | None = None) -> list[str]
         for item in items:
             if len(item.get("emphasis_word_ids", [])) > 3:
                 errors.append(f"{item.get('id')}: quá 3 từ nhấn mạnh trong 1 dòng")
+
+    ctx = ctx or {}
+    if "moi_anchor_phai_ton_tai_trong_transcript" in schema.get("custom", []):
+        errors += _check_anchors_exist(items, ctx)
+    if kind == "cutaway":
+        errors += _check_cutaway_budget(items, ctx)
+
+    return errors
+
+
+def _check_anchors_exist(items: list[dict], ctx: dict) -> list[str]:
+    valid_ids = ctx.get("valid_word_ids")
+    if valid_ids is None:
+        return []
+    errors: list[str] = []
+    for item in items:
+        label = item.get("id")
+        for field in ("anchor_start", "anchor_end"):
+            anchor = item.get(field)
+            if anchor is not None and anchor not in valid_ids:
+                errors.append(f"{label}: {field} '{anchor}' không tồn tại trong transcript.json")
+    return errors
+
+
+def _check_cutaway_budget(items: list[dict], ctx: dict) -> list[str]:
+    """khong_vuot_tran_api_calls_video · _thang · _3_lan_sinh_lai · _che_mat_qua_8_giay.
+
+    Chỉ xét mục đã sinh bằng AI (`image_source=ai_generated`) — mục Claude mới
+    soạn prompt (chưa gọi Gemini) không tiêu tốn hạn mức.
+    """
+    errors: list[str] = []
+    cfg = ctx.get("cfg")
+    ai_items = [i for i in items if i.get("image_source") == "ai_generated"]
+
+    if cfg is not None:
+        regen_limit = int(cfg.budget.gemini_regen_per_item)
+        for item in ai_items:
+            if int(item.get("regen_count", 0)) > regen_limit:
+                errors.append(f"{item.get('id')}: vượt trần {regen_limit} lần sinh lại/mục")
+
+        video_limit = int(cfg.budget.gemini_api_calls_per_video)
+        video_calls = sum(int(i.get("regen_count", 0)) + 1 for i in ai_items)
+        if video_calls > video_limit:
+            errors.append(f"vượt trần {video_limit} lượt gọi Gemini/video (đang {video_calls})")
+
+        month_used = ctx.get("month_used")
+        month_limit = int(cfg.budget.gemini_api_calls_per_month)
+        if month_used is not None and month_used > month_limit:
+            errors.append(f"vượt trần {month_limit} lượt gọi Gemini/tháng (đang {month_used})")
+
+        max_cover = float(cfg.cutaway.max_face_cover_sec)
+        for item in ai_items:
+            if float(item.get("t_dur", 0)) > max_cover:
+                errors.append(f"{item.get('id')}: che mặt {item.get('t_dur')}s, vượt trần {max_cover}s")
 
     return errors
 

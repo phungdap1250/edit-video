@@ -10,6 +10,7 @@ SOURCE = ROOT / "source"
 WORK = ROOT / "work"
 BLOCKS = WORK / "blocks"
 GENERATED_IMAGES = WORK / "generated_images"
+CUTAWAY_NORMALIZED = WORK / "cutaway_normalized"
 ASSETS = ROOT / "assets"
 HF = ROOT / "hf"
 HF_SCENES = HF / "scenes"
@@ -41,6 +42,9 @@ FRAME_MD = CONFIG / "frame.md"
 # Log
 RUN_LOG = LOGS / "run.log"
 STATS = LOGS / "stats.jsonl"
+
+# Zoom — tự động, không cần duyệt, tính lại được từ source + config (TDD §5.4)
+ZOOM_PLAN = WORK / "zoom_plan.json"
 
 # Ngân sách cấp tháng, xuyên project — TDD §9.4
 MONTHLY_BUDGET_DIR = Path.home() / ".ai-editor"

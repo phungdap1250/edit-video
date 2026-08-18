@@ -76,6 +76,16 @@ def probe(video: Path) -> dict:
     }
 
 
+def extract_frame(video: Path, out: Path, *, at_sec: float) -> Path:
+    """Xuất đúng 1 khung hình tại `at_sec` ra PNG — dùng cho dò khung mặt (TDD §5.4)."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    _run(
+        ["ffmpeg", "-y", "-ss", str(at_sec), "-i", str(video), "-frames:v", "1", str(out)],
+        "Xuất khung hình",
+    )
+    return out
+
+
 def extract_audio(video: Path, out: Path, *, bitrate: str = "64k") -> Path:
     """Tách audio để gửi ElevenLabs — file video gốc KHÔNG rời máy (§10.3)."""
     out.parent.mkdir(parents=True, exist_ok=True)
